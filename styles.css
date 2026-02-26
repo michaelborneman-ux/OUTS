@@ -320,6 +320,14 @@ html, body {
   overflow-y: auto;
 }
 
+.app-version {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-light);
+  padding: 4px 0 8px;
+  flex-shrink: 0;
+}
+
 .bundle-list.hidden {
   display: none;
 }

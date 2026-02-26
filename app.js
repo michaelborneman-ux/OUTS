@@ -6,6 +6,8 @@
 (function () {
   'use strict';
 
+  const APP_VERSION = 'v4.1';
+
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
   let bundles = [];            // grouped by bundle key
@@ -216,6 +218,7 @@
   }
   updateClock();
   setInterval(updateClock, 10000);
+  document.getElementById('app-version').textContent = APP_VERSION;
 
   // ─── Persistence ──────────────────────────────────
   const SENT_KEY    = 'mtr_sent_bundles';
