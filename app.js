@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v4.1';
+  const APP_VERSION = 'v4.3';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -14,11 +14,11 @@
   let sentBundles = new Set(); // bundle keys marked as sent (persisted)
   let bundleRates = {};        // bundle key → { est3, est46, est7p } — persisted
   let pendingRecordsForRates = null; // CSV records waiting for rate entry
-  let pendingEmailBundle     = null; // bundle queued in email provider picker
+  let pendingEmailBundle = null; // bundle queued in email provider picker
   let readerName = '';         // current reader name
   let pendingBundle = null;    // bundle waiting for reader name
   let currentBundle = null;    // bundle open in detail view
-  let currentRow    = null;    // row open in card detail view
+  let currentRow = null;    // row open in card detail view
   let cardReturnTarget = 'bundle'; // 'bundle' or 'map'
 
   // Default rates by area code (used to pre-fill the rate modal)
@@ -29,57 +29,57 @@
   };
 
   // Map state
-  let mapInitialized    = false;  // lazy init guard
-  let leafletMap        = null;   // L.Map instance
-  let mapMarkers        = [];     // array of { marker, row, bundle }
-  let geocodePending    = false;  // prevents concurrent geocode runs
-  let geocodedPoints    = [];     // cached results — reused on subsequent map opens
-  let geocodeFailures   = [];     // records that could not be geocoded
-  let geocodeStale      = false;  // set by forceGeocodeBundle — forces re-geocode on next map open
+  let mapInitialized = false;  // lazy init guard
+  let leafletMap = null;   // L.Map instance
+  let mapMarkers = [];     // array of { marker, row, bundle }
+  let geocodePending = false;  // prevents concurrent geocode runs
+  let geocodedPoints = [];     // cached results — reused on subsequent map opens
+  let geocodeFailures = [];     // records that could not be geocoded
+  let geocodeStale = false;  // set by forceGeocodeBundle — forces re-geocode on next map open
   let userLocationMarker = null;  // L.marker for the user's GPS position
-  let bdShowMissed      = false;  // bundle list filter: unread cards
-  let bdShowSkipped     = false;  // bundle list filter: skipped cards
-  let backupBarShown    = false;  // session flag — show daily backup bar only once
+  let bdShowMissed = false;  // bundle list filter: unread cards
+  let bdShowSkipped = false;  // bundle list filter: skipped cards
+  let backupBarShown = false;  // session flag — show daily backup bar only once
 
   // ─── DOM refs ─────────────────────────────────────
-  const viewSplash   = document.getElementById('view-splash');
-  const viewHome     = document.getElementById('view-home');
-  const viewBundle   = document.getElementById('view-bundle');
-  const viewTotals   = document.getElementById('view-totals');
-  const homeDate     = document.getElementById('home-date');
-  const homeTime     = document.getElementById('home-time');
-  const sumBundles   = document.getElementById('sum-bundles');
-  const sumCards     = document.getElementById('sum-cards');
-  const sumRead      = document.getElementById('sum-read');
-  const sumSent      = document.getElementById('sum-sent');
-  const homeSearch      = document.getElementById('home-search');
-  const homeReaderName  = document.getElementById('home-reader-name');
+  const viewSplash = document.getElementById('view-splash');
+  const viewHome = document.getElementById('view-home');
+  const viewBundle = document.getElementById('view-bundle');
+  const viewTotals = document.getElementById('view-totals');
+  const homeDate = document.getElementById('home-date');
+  const homeTime = document.getElementById('home-time');
+  const sumBundles = document.getElementById('sum-bundles');
+  const sumCards = document.getElementById('sum-cards');
+  const sumRead = document.getElementById('sum-read');
+  const sumSent = document.getElementById('sum-sent');
+  const homeSearch = document.getElementById('home-search');
+  const homeReaderName = document.getElementById('home-reader-name');
   const uploadPrompt = document.getElementById('upload-prompt');
-  const bundleList   = document.getElementById('bundle-list');
+  const bundleList = document.getElementById('bundle-list');
   const csvFileInput = document.getElementById('csv-file-input');
-  const toast        = document.getElementById('toast');
+  const toast = document.getElementById('toast');
 
   // Bundle detail
-  const bdDate        = document.getElementById('bd-date');
-  const bdTime        = document.getElementById('bd-time');
-  const bdRoutes      = document.getElementById('bd-routes');
-  const bdTitle       = document.getElementById('bd-title');
-  const bdArea        = document.getElementById('bd-area');
+  const bdDate = document.getElementById('bd-date');
+  const bdTime = document.getElementById('bd-time');
+  const bdRoutes = document.getElementById('bd-routes');
+  const bdTitle = document.getElementById('bd-title');
+  const bdArea = document.getElementById('bd-area');
   const bdStatusBadge = document.getElementById('bd-status-badge');
-  const bdCountLabel  = document.getElementById('bd-count-label');
-  const bdCountPct    = document.getElementById('bd-count-pct');
+  const bdCountLabel = document.getElementById('bd-count-label');
+  const bdCountPct = document.getElementById('bd-count-pct');
   const bdProgressFill = document.getElementById('bd-progress-fill');
-  const bdTotal       = document.getElementById('bd-total');
-  const bdEst3r       = document.getElementById('bd-est3r');
-  const bdEst3        = document.getElementById('bd-est3');
-  const bdEst46r      = document.getElementById('bd-est46r');
-  const bdEst46       = document.getElementById('bd-est46');
-  const bdEst7pr      = document.getElementById('bd-est7pr');
-  const bdEst7p       = document.getElementById('bd-est7p');
-  const bdReaderName  = document.getElementById('bd-reader-name');
-  const bdSearch           = document.getElementById('bd-search');
-  const addressList        = document.getElementById('address-list');
-  const bdFilterMissedBtn  = document.getElementById('bd-filter-missed');
+  const bdTotal = document.getElementById('bd-total');
+  const bdEst3r = document.getElementById('bd-est3r');
+  const bdEst3 = document.getElementById('bd-est3');
+  const bdEst46r = document.getElementById('bd-est46r');
+  const bdEst46 = document.getElementById('bd-est46');
+  const bdEst7pr = document.getElementById('bd-est7pr');
+  const bdEst7p = document.getElementById('bd-est7p');
+  const bdReaderName = document.getElementById('bd-reader-name');
+  const bdSearch = document.getElementById('bd-search');
+  const addressList = document.getElementById('address-list');
+  const bdFilterMissedBtn = document.getElementById('bd-filter-missed');
   const bdFilterSkippedBtn = document.getElementById('bd-filter-skipped');
   document.getElementById('bundle-back-btn').addEventListener('click', goHome);
   document.getElementById('bd-back-nav').addEventListener('click', goHome);
@@ -90,52 +90,52 @@
   document.getElementById('totals-print-btn').addEventListener('click', () => window.print());
 
   // Card detail
-  const viewCard       = document.getElementById('view-card');
-  const cardDtDate     = document.getElementById('card-dt-date');
-  const cardDtTime     = document.getElementById('card-dt-time');
-  const cardDtSeq      = document.getElementById('card-dt-seq');
-  const cardDtAddress  = document.getElementById('card-dt-address');
-  const cardDtCity     = document.getElementById('card-dt-city');
-  const cardDtLocRow   = document.getElementById('card-dt-loc-row');
-  const cardDtLoc      = document.getElementById('card-dt-loc');
-  const cardDtMtrSize  = document.getElementById('card-dt-mtr-size');
-  const cardDtSerial   = document.getElementById('card-dt-serial');
-  const cardDtEst      = document.getElementById('card-dt-est');
+  const viewCard = document.getElementById('view-card');
+  const cardDtDate = document.getElementById('card-dt-date');
+  const cardDtTime = document.getElementById('card-dt-time');
+  const cardDtSeq = document.getElementById('card-dt-seq');
+  const cardDtAddress = document.getElementById('card-dt-address');
+  const cardDtCity = document.getElementById('card-dt-city');
+  const cardDtLocRow = document.getElementById('card-dt-loc-row');
+  const cardDtLoc = document.getElementById('card-dt-loc');
+  const cardDtMtrSize = document.getElementById('card-dt-mtr-size');
+  const cardDtSerial = document.getElementById('card-dt-serial');
+  const cardDtEst = document.getElementById('card-dt-est');
   const cardDtSpecWrap = document.getElementById('card-dt-spec-wrap');
-  const cardDtSpec     = document.getElementById('card-dt-spec');
-  const cardDtReading  = document.getElementById('card-dt-reading');
-  const cardDtSkip      = document.getElementById('card-dt-skip');
+  const cardDtSpec = document.getElementById('card-dt-spec');
+  const cardDtReading = document.getElementById('card-dt-reading');
+  const cardDtSkip = document.getElementById('card-dt-skip');
   const cardDtSkipOther = document.getElementById('card-dt-skip-other');
-  const cardDtReadDate  = document.getElementById('card-dt-read-date');
-  const cardDtComments  = document.getElementById('card-dt-comments');
-  const cardDtSaveBtn   = document.getElementById('card-dt-save-btn');
-  const cardNavPos      = document.getElementById('card-nav-pos');
-  const cardPrevBtn     = document.getElementById('card-prev-btn');
-  const cardNextBtn     = document.getElementById('card-next-btn');
+  const cardDtReadDate = document.getElementById('card-dt-read-date');
+  const cardDtComments = document.getElementById('card-dt-comments');
+  const cardDtSaveBtn = document.getElementById('card-dt-save-btn');
+  const cardNavPos = document.getElementById('card-nav-pos');
+  const cardPrevBtn = document.getElementById('card-prev-btn');
+  const cardNextBtn = document.getElementById('card-next-btn');
   document.getElementById('card-back-btn').addEventListener('click', cardGoBack);
   document.getElementById('card-back-nav').addEventListener('click', cardGoBack);
 
   // Map view DOM refs
-  const viewMap         = document.getElementById('view-map');
-  const mapDate         = document.getElementById('map-date');
-  const mapTime         = document.getElementById('map-time');
-  const mapGeocodeBar   = document.getElementById('map-geocode-bar');
+  const viewMap = document.getElementById('view-map');
+  const mapDate = document.getElementById('map-date');
+  const mapTime = document.getElementById('map-time');
+  const mapGeocodeBar = document.getElementById('map-geocode-bar');
   const mapGeocodeLabel = document.getElementById('map-geocode-label');
-  const mapGeocodeFill  = document.getElementById('map-geocode-fill');
-  const mapReaderName   = document.getElementById('map-reader-name');
-  const homeNavMap        = document.getElementById('home-nav-map');
-  const mapNavBundles     = document.getElementById('map-nav-bundles');
-  const mapNotFoundBar    = document.getElementById('map-notfound-bar');
-  const mapNotFoundLabel  = document.getElementById('map-notfound-label');
-  const geocodeFixModal   = document.getElementById('geocode-fix-modal');
-  const geocodeFixList    = document.getElementById('geocode-fix-list');
-  const mapBundleFilter   = document.getElementById('map-bundle-filter');
+  const mapGeocodeFill = document.getElementById('map-geocode-fill');
+  const mapReaderName = document.getElementById('map-reader-name');
+  const homeNavMap = document.getElementById('home-nav-map');
+  const mapNavBundles = document.getElementById('map-nav-bundles');
+  const mapNotFoundBar = document.getElementById('map-notfound-bar');
+  const mapNotFoundLabel = document.getElementById('map-notfound-label');
+  const geocodeFixModal = document.getElementById('geocode-fix-modal');
+  const geocodeFixList = document.getElementById('geocode-fix-list');
+  const mapBundleFilter = document.getElementById('map-bundle-filter');
 
   // Rate modal
-  const rateModal    = document.getElementById('rate-modal');
-  const rateEst3In   = document.getElementById('rate-est3');
-  const rateEst46In  = document.getElementById('rate-est46');
-  const rateEst7pIn  = document.getElementById('rate-est7p');
+  const rateModal = document.getElementById('rate-modal');
+  const rateEst3In = document.getElementById('rate-est3');
+  const rateEst46In = document.getElementById('rate-est46');
+  const rateEst7pIn = document.getElementById('rate-est7p');
   function showRateModal(records) {
     pendingRecordsForRates = records;
     // Detect area from first record to pre-fill defaults
@@ -144,21 +144,21 @@
       ? String((firstMruRow['MRU id'] || '').trim()).padStart(6, '0').substring(2, 4)
       : '';
     // Prefer previously stored rates for a matching bundle key, then area defaults
-    const newKeys   = getNewBundleKeys(records);
-    const stored    = newKeys.map(k => bundleRates[k]).find(Boolean);
-    const defaults  = stored || AREA_RATES[mruArea] || {};
-    rateEst3In.value   = defaults.est3   != null ? defaults.est3   : '';
-    rateEst46In.value  = defaults.est46  != null ? defaults.est46  : '';
-    rateEst7pIn.value  = defaults.est7p  != null ? defaults.est7p  : '';
+    const newKeys = getNewBundleKeys(records);
+    const stored = newKeys.map(k => bundleRates[k]).find(Boolean);
+    const defaults = stored || AREA_RATES[mruArea] || {};
+    rateEst3In.value = defaults.est3 != null ? defaults.est3 : '';
+    rateEst46In.value = defaults.est46 != null ? defaults.est46 : '';
+    rateEst7pIn.value = defaults.est7p != null ? defaults.est7p : '';
     rateModal.classList.remove('hidden');
     rateEst3In.focus();
   }
 
   document.getElementById('rate-modal-confirm').addEventListener('click', () => {
     const rates = {
-      est3:   parseFloat(rateEst3In.value)  || 0,
-      est46:  parseFloat(rateEst46In.value) || 0,
-      est7p:  parseFloat(rateEst7pIn.value) || 0,
+      est3: parseFloat(rateEst3In.value) || 0,
+      est46: parseFloat(rateEst46In.value) || 0,
+      est7p: parseFloat(rateEst7pIn.value) || 0,
     };
     rateModal.classList.add('hidden');
     commitLoad(pendingRecordsForRates, rates);
@@ -197,37 +197,37 @@
   });
 
   // Reader name modal
-  const readerModal   = document.getElementById('reader-name-modal');
-  const readerInput   = document.getElementById('reader-name-input');
+  const readerModal = document.getElementById('reader-name-modal');
+  const readerInput = document.getElementById('reader-name-input');
   const readerConfirm = document.getElementById('reader-name-confirm');
-  const readerCancel  = document.getElementById('reader-name-cancel');
+  const readerCancel = document.getElementById('reader-name-cancel');
 
   // ─── Clock / Date ─────────────────────────────────
   function updateClock() {
     const now = new Date();
     const t = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     const d = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    homeTime.textContent    = t;
-    homeDate.textContent    = d;
-    bdTime.textContent      = t;
-    bdDate.textContent      = d;
-    cardDtTime.textContent  = t;
-    cardDtDate.textContent  = d;
-    mapTime.textContent     = t;
-    mapDate.textContent     = d;
+    homeTime.textContent = t;
+    homeDate.textContent = d;
+    bdTime.textContent = t;
+    bdDate.textContent = d;
+    cardDtTime.textContent = t;
+    cardDtDate.textContent = d;
+    mapTime.textContent = t;
+    mapDate.textContent = d;
   }
   updateClock();
   setInterval(updateClock, 10000);
 
   // ─── Persistence ──────────────────────────────────
-  const SENT_KEY    = 'mtr_sent_bundles';
-  const READER_KEY  = 'mtr_reader_name';
+  const SENT_KEY = 'mtr_sent_bundles';
+  const READER_KEY = 'mtr_reader_name';
   const RECORDS_KEY = 'mtr_records_backup';
   const DELETED_KEY = 'mtr_deleted_bundles';
   const GEOCACHE_KEY = 'mtr_geocache';
-  const RATES_KEY   = 'mtr_bundle_rates';
+  const RATES_KEY = 'mtr_bundle_rates';
   const BACKUP_DATE_KEY = 'mtr_last_backup_date';
-  const TWO_WEEKS   = 14 * 24 * 60 * 60 * 1000;
+  const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
 
   let deletedBundles = [];  // [{ key, bundleName, rows, deletedAt }]
 
@@ -235,19 +235,19 @@
     try {
       const raw = localStorage.getItem(SENT_KEY);
       if (raw) sentBundles = new Set(JSON.parse(raw));
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function saveSentState() {
     try {
       localStorage.setItem(SENT_KEY, JSON.stringify([...sentBundles]));
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function saveDeletedBundles() {
     try {
       localStorage.setItem(DELETED_KEY, JSON.stringify(deletedBundles));
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function loadDeletedBundles() {
@@ -259,13 +259,13 @@
       deletedBundles = all.filter(d => d.deletedAt >= cutoff);
       // Prune expired entries from storage
       if (deletedBundles.length !== all.length) saveDeletedBundles();
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function saveRecordsBackup() {
     try {
       localStorage.setItem(RECORDS_KEY, JSON.stringify(allRecords));
-    } catch (_) {}
+    } catch (_) { }
   }
 
   function loadRecordsBackup() {
@@ -275,7 +275,7 @@
       const saved = JSON.parse(raw);
       if (!Array.isArray(saved) || !saved.length) return false;
       allRecords = saved;
-      bundles    = groupIntoBundles(allRecords);
+      bundles = groupIntoBundles(allRecords);
       return true;
     } catch (_) { return false; }
   }
@@ -286,7 +286,7 @@
   }
 
   function saveGeoCache(cache) {
-    try { localStorage.setItem(GEOCACHE_KEY, JSON.stringify(cache)); } catch (_) {}
+    try { localStorage.setItem(GEOCACHE_KEY, JSON.stringify(cache)); } catch (_) { }
   }
 
   function loadBundleRates() {
@@ -294,7 +294,7 @@
   }
 
   function saveBundleRates() {
-    try { localStorage.setItem(RATES_KEY, JSON.stringify(bundleRates)); } catch (_) {}
+    try { localStorage.setItem(RATES_KEY, JSON.stringify(bundleRates)); } catch (_) { }
   }
 
   // Strips suite/unit/lot qualifiers from a civic number and street name
@@ -326,7 +326,7 @@
 
     const doFetch = (q) =>
       fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=ca`,
-            { headers: { 'User-Agent': 'MeterReaderPWA/1.0' } })
+        { headers: { 'User-Agent': 'MeterReaderPWA/1.0' } })
         .then(r => r.json())
         .then(d => (d && d[0]) ? { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) } : null)
         .catch(() => null);
@@ -352,14 +352,14 @@
     const tasks = [];
     bundles.forEach(bundle => {
       bundle.rows.forEach(row => {
-        const num    = (row['#']      || '').trim();
+        const num = (row['#'] || '').trim();
         const street = (row['STREET'] || '').trim();
-        const city   = (row['City']   || '').trim();
+        const city = (row['City'] || '').trim();
         if (!street || !city) return;
         tasks.push({ row, bundle, num, street, city });
       });
     });
-    const results  = [];
+    const results = [];
     const failures = [];
     let doneCount = 0;
     const total = tasks.length;
@@ -383,15 +383,15 @@
   // ─── Map View ─────────────────────────────────────
   function getMarkerColor(row) {
     const reading = (row['READING'] || '').trim();
-    const skip    = (row['SKIP']    || '').trim();
-    if (skip)    return '#f59e0b';  // amber — skipped
+    const skip = (row['SKIP'] || '').trim();
+    if (skip) return '#f59e0b';  // amber — skipped
     if (reading) return '#22c55e';  // green — read
     return '#3b82f6';               // blue — unread
   }
 
   function makeCircleIcon(color) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">` +
-                `<circle cx="10" cy="10" r="8" fill="${color}" stroke="#fff" stroke-width="2"/></svg>`;
+      `<circle cx="10" cy="10" r="8" fill="${color}" stroke="#fff" stroke-width="2"/></svg>`;
     return L.divIcon({ html: svg, className: '', iconSize: [20, 20], iconAnchor: [10, 10], popupAnchor: [0, -12] });
   }
 
@@ -454,7 +454,7 @@
           <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
         </svg>`,
         className: '',
-        iconSize:   [28, 28],
+        iconSize: [28, 28],
         iconAnchor: [14, 28],
         popupAnchor: [0, -30]
       });
@@ -507,11 +507,11 @@
     clearMapMarkers();
     const bounds = [];
     points.forEach(({ lat, lng, row, bundle }) => {
-      const icon  = makeCircleIcon(getMarkerColor(row));
-      const addr    = [row['#'], row['STREET']].filter(Boolean).join(' ');
-      const loc     = (row['LOC'] || '').trim();
+      const icon = makeCircleIcon(getMarkerColor(row));
+      const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
+      const loc = (row['LOC'] || '').trim();
       const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-      const popup   = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a>`;
+      const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a>`;
       const marker = L.marker([lat, lng], { icon })
         .addTo(leafletMap)
         .bindPopup(popup, { autoClose: false, closeOnClick: false });
@@ -552,7 +552,7 @@
 
     if (geocodePending) return;  // geocode in progress — wait for it
 
-    geocodeStale   = false;
+    geocodeStale = false;
     geocodePending = true;
     mapGeocodeBar.classList.remove('hidden');
     mapGeocodeFill.style.width = '0%';
@@ -564,7 +564,7 @@
       mapGeocodeLabel.textContent = `Geocoding… ${done} / ${total}`;
     }).then(({ points, failures }) => {
       geocodePending = false;
-      geocodedPoints  = points;
+      geocodedPoints = points;
       geocodeFailures = failures;
       mapGeocodeBar.classList.add('hidden');
       placeMarkers(points);
@@ -620,26 +620,26 @@
   function forceGeocodeBundle(bundle) {
     const cache = loadGeoCache();
     bundle.rows.forEach(r => {
-      const num    = (r['#']      || '').trim();
+      const num = (r['#'] || '').trim();
       const street = (r['STREET'] || '').trim();
-      const city   = (r['City']   || '').trim();
+      const city = (r['City'] || '').trim();
       if (!street || !city) return;
       const { cleanNum, cleanStreet } = stripUnitInfo(num, street);
       const key = `${cleanNum} ${cleanStreet},${city}`.trim().toLowerCase();
       delete cache[key];
     });
     saveGeoCache(cache);
-    geocodedPoints  = geocodedPoints.filter(p => p.bundle !== bundle);
+    geocodedPoints = geocodedPoints.filter(p => p.bundle !== bundle);
     geocodeFailures = geocodeFailures.filter(f => f.bundle !== bundle);
-    geocodeStale    = true;
+    geocodeStale = true;
     showToast(`"${bundle.bundleName}" geocache cleared — open Map to re-geocode`);
   }
 
   function addSingleMarker(coords, row, bundle) {
-    const icon   = makeCircleIcon(getMarkerColor(row));
-    const addr   = [row['#'], row['STREET']].filter(Boolean).join(' ');
-    const loc    = (row['LOC'] || '').trim();
-    const popup  = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}`;
+    const icon = makeCircleIcon(getMarkerColor(row));
+    const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
+    const loc = (row['LOC'] || '').trim();
+    const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}`;
     const marker = L.marker([coords.lat, coords.lng], { icon })
       .addTo(leafletMap)
       .bindPopup(popup, { autoClose: false, closeOnClick: false });
@@ -661,8 +661,8 @@
         </div>
         <div class="geocode-fix-status"></div>
       `;
-      const input  = item.querySelector('.geocode-fix-input');
-      const btn    = item.querySelector('.geocode-fix-btn');
+      const input = item.querySelector('.geocode-fix-input');
+      const btn = item.querySelector('.geocode-fix-btn');
       const status = item.querySelector('.geocode-fix-status');
 
       btn.addEventListener('click', () => {
@@ -777,31 +777,31 @@
     });
 
     return Array.from(map.entries()).map(([key, rows]) => {
-      const city     = rows[0]['City'] || '';
+      const city = rows[0]['City'] || '';
       const bundleId = rows[0]['BundleID'] || '';
 
       // Pad MRU ids to 6 digits, then decode CC AA RR
-      const padMru  = (id) => id.padStart(6, '0');
-      const mruIds  = [...new Set(rows.map(r => padMru((r['MRU id'] || '').trim())).filter(Boolean))];
+      const padMru = (id) => id.padStart(6, '0');
+      const mruIds = [...new Set(rows.map(r => padMru((r['MRU id'] || '').trim())).filter(Boolean))];
       const firstMru = mruIds[0] || '000000';
       const mruCycle = firstMru.substring(0, 2);   // first 2 digits
-      const mruArea  = firstMru.substring(2, 4);   // middle 2 digits
+      const mruArea = firstMru.substring(2, 4);   // middle 2 digits
       // Route numbers = last 2 digits of each unique MRU id
       const routeNums = mruIds.map(id => id.substring(4, 6));
 
-      const isRead   = (r) => (r['READING'] || '').trim() !== '' ||
-                               ((r['SKIP'] || '').trim() !== '' && (r['SKIP'] || '').trim() !== 'Other');
-      const read     = rows.filter(isRead).length;
-      const total    = rows.length;
-      const estVal   = (r) => parseInt(r['# EST'] || r['Estimates'] || '0', 10);
-      const est3Rows     = rows.filter(r => estVal(r) === 3);
-      const est46Rows    = rows.filter(r => { const v = estVal(r); return v >= 4 && v <= 6; });
+      const isRead = (r) => (r['READING'] || '').trim() !== '' ||
+        ((r['SKIP'] || '').trim() !== '' && (r['SKIP'] || '').trim() !== 'Other');
+      const read = rows.filter(isRead).length;
+      const total = rows.length;
+      const estVal = (r) => parseInt(r['# EST'] || r['Estimates'] || '0', 10);
+      const est3Rows = rows.filter(r => estVal(r) === 3);
+      const est46Rows = rows.filter(r => { const v = estVal(r); return v >= 4 && v <= 6; });
       const est7plusRows = rows.filter(r => estVal(r) >= 7);
-      const est3     = est3Rows.length;
-      const est46    = est46Rows.length;
+      const est3 = est3Rows.length;
+      const est46 = est46Rows.length;
       const est7plus = est7plusRows.length;
-      const est3Read     = est3Rows.filter(isRead).length;
-      const est46Read    = est46Rows.filter(isRead).length;
+      const est3Read = est3Rows.filter(isRead).length;
+      const est46Read = est46Rows.filter(isRead).length;
       const est7plusRead = est7plusRows.filter(isRead).length;
       return { key, bundleName: key, mruIds, routeNums, mruCycle, mruArea, bundleId, rows, city, total, read, est3, est46, est7plus, est3Read, est46Read, est7plusRead };
     });
@@ -818,21 +818,21 @@
   }
 
   function statusLabel(status) {
-    if (status === 'sent')        return 'Email Sent';
-    if (status === 'complete')    return 'Complete';
+    if (status === 'sent') return 'Email Sent';
+    if (status === 'complete') return 'Complete';
     return 'In Progress';
   }
 
   // ─── Render Dashboard ─────────────────────────────
   function renderHome() {
     const totalCards = bundles.reduce((s, b) => s + b.total, 0);
-    const totalRead  = bundles.reduce((s, b) => s + b.read,  0);
-    const totalSent  = bundles.filter(b => sentBundles.has(b.key)).length;
+    const totalRead = bundles.reduce((s, b) => s + b.read, 0);
+    const totalSent = bundles.filter(b => sentBundles.has(b.key)).length;
 
     sumBundles.textContent = bundles.length;
-    sumCards.textContent   = totalCards;
-    sumRead.textContent    = totalRead;
-    sumSent.textContent    = totalSent;
+    sumCards.textContent = totalCards;
+    sumRead.textContent = totalRead;
+    sumSent.textContent = totalSent;
 
     if (bundles.length === 0) {
       uploadPrompt.classList.remove('hidden');
@@ -846,10 +846,10 @@
 
     const frag = document.createDocumentFragment();
     bundles.forEach(bundle => {
-      const status  = getBundleStatus(bundle);
-      const pct     = bundle.total > 0
+      const status = getBundleStatus(bundle);
+      const pct = bundle.total > 0
         ? Math.round((bundle.read / bundle.total) * 100) : 0;
-      const isSent  = status === 'sent';
+      const isSent = status === 'sent';
 
       const card = document.createElement('div');
       card.className = 'bundle-card';
@@ -900,9 +900,9 @@
                   data-key="${esc(bundle.key)}"
                   ${isSent ? 'disabled' : ''}>
             ${isSent
-              ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Sent`
-              : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send Bundle`
-            }
+            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Sent`
+            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send Bundle`
+          }
           </button>` : ''}
 
           <button class="bundle-email-btn" title="Email this bundle">
@@ -947,7 +947,7 @@
       card.dataset.search = bundle.rows.map(r => [
         (r['#'] || '') + ' ' + (r['STREET'] || ''),
         r['Serial No.'] || '',
-        r['MTR SIZE']   || '',
+        r['MTR SIZE'] || '',
       ].join(' ')).join(' ').toLowerCase();
 
       // Card tap → open bundle detail
@@ -1007,42 +1007,42 @@
 
   // ─── Recompute Bundle Stats After Edits ───────────
   function refreshBundleStats(bundle) {
-    const isRead   = (r) => (r['READING'] || '').trim() !== '' ||
-                             ((r['SKIP'] || '').trim() !== '' && (r['SKIP'] || '').trim() !== 'Other');
-    const estVal   = (r) => parseInt(r['# EST'] || r['Estimates'] || '0', 10);
-    const est3Rows     = bundle.rows.filter(r => estVal(r) === 3);
-    const est46Rows    = bundle.rows.filter(r => { const v = estVal(r); return v >= 4 && v <= 6; });
+    const isRead = (r) => (r['READING'] || '').trim() !== '' ||
+      ((r['SKIP'] || '').trim() !== '' && (r['SKIP'] || '').trim() !== 'Other');
+    const estVal = (r) => parseInt(r['# EST'] || r['Estimates'] || '0', 10);
+    const est3Rows = bundle.rows.filter(r => estVal(r) === 3);
+    const est46Rows = bundle.rows.filter(r => { const v = estVal(r); return v >= 4 && v <= 6; });
     const est7plusRows = bundle.rows.filter(r => estVal(r) >= 7);
-    bundle.read        = bundle.rows.filter(isRead).length;
-    bundle.est3        = est3Rows.length;
-    bundle.est46       = est46Rows.length;
-    bundle.est7plus    = est7plusRows.length;
-    bundle.est3Read    = est3Rows.filter(isRead).length;
-    bundle.est46Read   = est46Rows.filter(isRead).length;
+    bundle.read = bundle.rows.filter(isRead).length;
+    bundle.est3 = est3Rows.length;
+    bundle.est46 = est46Rows.length;
+    bundle.est7plus = est7plusRows.length;
+    bundle.est3Read = est3Rows.filter(isRead).length;
+    bundle.est46Read = est46Rows.filter(isRead).length;
     bundle.est7plusRead = est7plusRows.filter(isRead).length;
   }
 
   // ─── Card Detail View ─────────────────────────────
   function showCardDetail(row, bundle, returnTarget) {
-    currentRow    = row;
+    currentRow = row;
     currentBundle = bundle;
     if (returnTarget) cardReturnTarget = returnTarget;
     const backLabel = cardReturnTarget === 'map' ? 'Map' : 'List';
     document.getElementById('card-back-label').textContent = backLabel;
     document.getElementById('card-back-nav-label').textContent = backLabel;
 
-    const num     = row['#']               || '';
-    const street  = row['STREET']          || '';
+    const num = row['#'] || '';
+    const street = row['STREET'] || '';
     const address = [num, street].filter(Boolean).join(' ');
-    const loc     = (row['LOC']            || '').trim();
-    const spec    = (row['SPEC INSTRUCTIONS'] || '').trim();
+    const loc = (row['LOC'] || '').trim();
+    const spec = (row['SPEC INSTRUCTIONS'] || '').trim();
 
-    cardDtSeq.textContent      = `Seq #${row['Seq #'] || '—'}`;
-    cardDtAddress.textContent  = address || '—';
-    cardDtCity.textContent     = row['City']          || '—';
-    cardDtMtrSize.textContent  = row['MTR SIZE']      || '—';
-    cardDtSerial.textContent   = row['Serial No.']    || '—';
-    cardDtEst.textContent      = row['# EST']         || '0';
+    cardDtSeq.textContent = `Seq #${row['Seq #'] || '—'}`;
+    cardDtAddress.textContent = address || '—';
+    cardDtCity.textContent = row['City'] || '—';
+    cardDtMtrSize.textContent = row['MTR SIZE'] || '—';
+    cardDtSerial.textContent = row['Serial No.'] || '—';
+    cardDtEst.textContent = row['# EST'] || '0';
 
     // Location — hide row if empty
     cardDtLoc.textContent = loc;
@@ -1053,24 +1053,24 @@
     cardDtSpecWrap.classList.toggle('hidden', !spec);
 
     // Pre-fill reading, skip, comments, and date
-    cardDtReading.value  = (row['READING'] || '').trim();
+    cardDtReading.value = (row['READING'] || '').trim();
     const savedSkip = row['SKIP'] || '';
     cardDtSkip.value = savedSkip;
     cardDtSkipOther.value = row['SKIP_OTHER'] || '';
     cardDtSkipOther.classList.toggle('hidden', savedSkip !== 'Other');
     cardDtComments.value = row['COMMENTS'] || '';
-    const today      = new Date().toLocaleDateString('en-CA');
-    const savedDate  = (row['READ DATE'] || '').trim();
+    const today = new Date().toLocaleDateString('en-CA');
+    const savedDate = (row['READ DATE'] || '').trim();
     const isComplete = (row['READING'] || '').trim() !== '' ||
-                       ((row['SKIP'] || '').trim() !== '' && (row['SKIP'] || '').trim() !== 'Other') ||
-                       (row['COMMENTS'] || '').trim() !== '';
-    cardDtReadDate.value    = savedDate || today;
+      ((row['SKIP'] || '').trim() !== '' && (row['SKIP'] || '').trim() !== 'Other') ||
+      (row['COMMENTS'] || '').trim() !== '';
+    cardDtReadDate.value = savedDate || today;
     cardDtReadDate.readOnly = isComplete;
     cardDtReadDate.classList.toggle('date-locked', isComplete);
 
     // Prev / next nav
-    const rows  = bundle.rows;
-    const idx   = rows.indexOf(row);
+    const rows = bundle.rows;
+    const idx = rows.indexOf(row);
     cardNavPos.textContent = `${idx + 1} / ${rows.length}`;
     cardPrevBtn.disabled = idx === 0;
     cardNextBtn.disabled = idx === rows.length - 1;
@@ -1082,21 +1082,21 @@
 
   cardPrevBtn.addEventListener('click', () => {
     const rows = currentBundle.rows;
-    const idx  = rows.indexOf(currentRow);
+    const idx = rows.indexOf(currentRow);
     if (idx > 0) showCardDetail(rows[idx - 1], currentBundle);
   });
 
   cardNextBtn.addEventListener('click', () => {
     const rows = currentBundle.rows;
-    const idx  = rows.indexOf(currentRow);
+    const idx = rows.indexOf(currentRow);
     if (idx < rows.length - 1) showCardDetail(rows[idx + 1], currentBundle);
   });
 
   // Save reading handler
   cardDtSaveBtn.addEventListener('click', () => {
-    const reading  = cardDtReading.value.trim();
-    const skip     = cardDtSkip.value;
-    const date     = cardDtReadDate.value;
+    const reading = cardDtReading.value.trim();
+    const skip = cardDtSkip.value;
+    const date = cardDtReadDate.value;
     const comments = cardDtComments.value.trim();
 
     if (reading && skip) {
@@ -1105,11 +1105,11 @@
     }
 
     const isComplete = reading !== '' || (skip !== '' && skip !== 'Other') || comments !== '';
-    currentRow['READING']    = reading;
-    currentRow['READ DATE']  = isComplete ? date : '';
-    currentRow['SKIP']       = skip;
+    currentRow['READING'] = reading;
+    currentRow['READ DATE'] = isComplete ? date : '';
+    currentRow['SKIP'] = skip;
     currentRow['SKIP_OTHER'] = skip === 'Other' ? cardDtSkipOther.value.trim() : '';
-    currentRow['COMMENTS']   = comments;
+    currentRow['COMMENTS'] = comments;
 
     updateMapMarkerForRow(currentRow);  // refresh marker color immediately if on map
 
@@ -1125,7 +1125,7 @@
     cardDtSaveBtn.textContent = '✓ Saved';
     cardDtSaveBtn.disabled = true;
 
-    const rows    = currentBundle.rows;
+    const rows = currentBundle.rows;
     const savedIdx = rows.indexOf(currentRow);
 
     setTimeout(() => {
@@ -1142,8 +1142,8 @@
   function setReaderName(name) {
     readerName = name;
     homeReaderName.textContent = name || 'Tap to set name';
-    bdReaderName.textContent   = name;
-    try { localStorage.setItem(READER_KEY, name); } catch (_) {}
+    bdReaderName.textContent = name;
+    try { localStorage.setItem(READER_KEY, name); } catch (_) { }
   }
 
   readerConfirm.addEventListener('click', () => {
@@ -1204,10 +1204,10 @@
       if (el.classList.contains('bd-no-results')) return;
       const matchesSearch = !q ||
         (el.dataset.address || '').includes(q) ||
-        (el.dataset.serial  || '').includes(q) ||
+        (el.dataset.serial || '').includes(q) ||
         (el.dataset.mtrsize || '').includes(q);
       const matchesFilter = !filterActive ||
-        (bdShowMissed  && el.dataset.status === 'unread') ||
+        (bdShowMissed && el.dataset.status === 'unread') ||
         (bdShowSkipped && el.dataset.status === 'skip');
       el.hidden = !(matchesSearch && matchesFilter);
       if (!el.hidden) visible++;
@@ -1243,9 +1243,9 @@
 
   // ─── Totals / Daily Report View ───────────────────
   function showTotalsView(bundle) {
-    const rates      = bundleRates[bundle.key] || null;
-    const fmtRate    = (r) => r != null ? `$${r.toFixed(2)}` : '—';
-    const today      = new Date().toLocaleDateString('en-CA');
+    const rates = bundleRates[bundle.key] || null;
+    const fmtRate = (r) => r != null ? `$${r.toFixed(2)}` : '—';
+    const today = new Date().toLocaleDateString('en-CA');
     const issuedDate = rates?.issuedDate || today;
     const routeStr = bundle.mruIds.length
       ? `A${bundle.mruArea} – ${bundle.routeNums.join(', ')}`
@@ -1305,9 +1305,9 @@
           </tr>
         </thead>
         <tbody>
-          ${row('Est 3',   rates ? rates.est3  : null, bundle.est3Read,     bundle.est3)}
-          ${row('Est 4–6', rates ? rates.est46 : null, bundle.est46Read,    bundle.est46)}
-          ${row('Est 7+',  rates ? rates.est7p : null, bundle.est7plusRead, bundle.est7plus)}
+          ${row('Est 3', rates ? rates.est3 : null, bundle.est3Read, bundle.est3)}
+          ${row('Est 4–6', rates ? rates.est46 : null, bundle.est46Read, bundle.est46)}
+          ${row('Est 7+', rates ? rates.est7p : null, bundle.est7plusRead, bundle.est7plus)}
           <tr class="report-total-row">
             <td>Total</td>
             <td></td>
@@ -1338,34 +1338,34 @@
   function showBundleDetail(bundle) {
     pendingBundle = null;
     document.getElementById('bd-geocode-btn').onclick = () => forceGeocodeBundle(bundle);
-    document.getElementById('bd-report-btn').onclick  = () => showTotalsView(bundle);
+    document.getElementById('bd-report-btn').onclick = () => showTotalsView(bundle);
 
     const status = getBundleStatus(bundle);
-    const pct    = bundle.total > 0 ? Math.round((bundle.read / bundle.total) * 100) : 0;
+    const pct = bundle.total > 0 ? Math.round((bundle.read / bundle.total) * 100) : 0;
 
     // Header — row 1
     bdStatusBadge.textContent = statusLabel(status);
-    bdStatusBadge.className   = `status-badge ${status}`;
+    bdStatusBadge.className = `status-badge ${status}`;
 
     // Header — row 2
     bdRoutes.textContent = `${bundle.mruIds.length} Route${bundle.mruIds.length !== 1 ? 's' : ''}`;
-    bdTitle.textContent  = bundle.bundleName;
-    bdArea.textContent   = `Area ${bundle.mruArea}`;
+    bdTitle.textContent = bundle.bundleName;
+    bdArea.textContent = `Area ${bundle.mruArea}`;
 
     // Progress
-    bdCountLabel.textContent  = `${bundle.read} of ${bundle.total} cards read`;
-    bdCountPct.textContent    = `${pct}%`;
+    bdCountLabel.textContent = `${bundle.read} of ${bundle.total} cards read`;
+    bdCountPct.textContent = `${pct}%`;
     bdProgressFill.style.width = `${pct}%`;
-    bdProgressFill.className  = `bd-progress-fill ${status}`;
+    bdProgressFill.className = `bd-progress-fill ${status}`;
 
     // Stats footer
-    bdTotal.textContent  = bundle.total;
-    bdEst3r.textContent  = bundle.est3Read;
-    bdEst3.textContent   = bundle.est3;
+    bdTotal.textContent = bundle.total;
+    bdEst3r.textContent = bundle.est3Read;
+    bdEst3.textContent = bundle.est3;
     bdEst46r.textContent = bundle.est46Read;
-    bdEst46.textContent  = bundle.est46;
+    bdEst46.textContent = bundle.est46;
     bdEst7pr.textContent = bundle.est7plusRead;
-    bdEst7p.textContent  = bundle.est7plus;
+    bdEst7p.textContent = bundle.est7plus;
 
     bdReaderName.textContent = readerName;
 
@@ -1377,7 +1377,7 @@
     });
 
     bdSearch.value = '';
-    bdShowMissed  = false;
+    bdShowMissed = false;
     bdShowSkipped = false;
     bdFilterMissedBtn.classList.remove('active');
     bdFilterSkippedBtn.classList.remove('active');
@@ -1385,38 +1385,38 @@
     const frag = document.createDocumentFragment();
 
     sorted.forEach(row => {
-      const seq      = row['Seq #']            || '';
-      const num      = row['#']               || '';
-      const street   = row['STREET']          || '';
-      const address  = [num, street].filter(Boolean).join(' ');
-      const spec     = row['SPEC INSTRUCTIONS'] || '';
-      const loc      = row['LOC']             || '';
-      const mtrSize  = row['MTR SIZE']        || '';
-      const serial   = row['Serial No.']      || '';
-      const reading  = (row['READING']        || '').trim();
-      const skip     = (row['SKIP']           || '').trim();
-      const readDate = (row['READ DATE']      || '').trim();
-      const comment  = (row['COMMENTS']       || '').trim();
-      const estVal   = parseInt(row['# EST']  || '0', 10);
+      const seq = row['Seq #'] || '';
+      const num = row['#'] || '';
+      const street = row['STREET'] || '';
+      const address = [num, street].filter(Boolean).join(' ');
+      const spec = row['SPEC INSTRUCTIONS'] || '';
+      const loc = row['LOC'] || '';
+      const mtrSize = row['MTR SIZE'] || '';
+      const serial = row['Serial No.'] || '';
+      const reading = (row['READING'] || '').trim();
+      const skip = (row['SKIP'] || '').trim();
+      const readDate = (row['READ DATE'] || '').trim();
+      const comment = (row['COMMENTS'] || '').trim();
+      const estVal = parseInt(row['# EST'] || '0', 10);
 
       let estClass = 'est-ok';
       let estLabel = '';
-      if (estVal === 3)                    { estClass = 'est-3';  estLabel = '3 Est'; }
+      if (estVal === 3) { estClass = 'est-3'; estLabel = '3 Est'; }
       else if (estVal >= 4 && estVal <= 6) { estClass = 'est-46'; estLabel = `${estVal} Est`; }
-      else if (estVal >= 7)                { estClass = 'est-7p'; estLabel = `${estVal} Est`; }
+      else if (estVal >= 7) { estClass = 'est-7p'; estLabel = `${estVal} Est`; }
 
       const meterMeta = [
-        loc     ? `Loc: ${loc}`      : '',
+        loc ? `Loc: ${loc}` : '',
         mtrSize ? `Size: ${mtrSize}` : '',
-        serial  ? `#: ${serial}`     : '',
+        serial ? `#: ${serial}` : '',
       ].filter(Boolean).join('  ·  ');
 
       const card = document.createElement('div');
       card.className = `addr-card${skip ? ' addr-skip' : reading ? ' addr-read' : ''}`;
       card.dataset.address = address.toLowerCase();
-      card.dataset.serial  = serial.toLowerCase();
+      card.dataset.serial = serial.toLowerCase();
       card.dataset.mtrsize = mtrSize.toLowerCase();
-      card.dataset.status  = skip ? 'skip' : reading ? 'read' : 'unread';
+      card.dataset.status = skip ? 'skip' : reading ? 'read' : 'unread';
       card.innerHTML = `
         <div class="addr-seq">${esc(seq)}</div>
         <div class="addr-info">
@@ -1426,7 +1426,7 @@
           ${(readDate || comment) ? `<div class="addr-read-info">${readDate ? `<span class="addr-read-date">${esc(readDate)}</span>` : ''}${comment ? `<span class="addr-comment">${esc(comment)}</span>` : ''}</div>` : ''}
         </div>
         <div class="addr-right">
-          ${skip    ? `<span class="addr-status-badge addr-skip-badge">Skip</span>` : ''}
+          ${skip ? `<span class="addr-status-badge addr-skip-badge">Skip</span>` : ''}
           ${!skip && reading ? `<span class="addr-status-badge addr-read-badge">Read</span>` : ''}
           ${estLabel ? `<span class="addr-est-badge ${estClass}">${estLabel}</span>` : ''}
         </div>
@@ -1443,13 +1443,13 @@
   }
 
   // ─── CSV File Load ────────────────────────────────
-  const dupModal     = document.getElementById('dup-bundle-modal');
-  const dupDesc      = document.getElementById('dup-bundle-desc');
+  const dupModal = document.getElementById('dup-bundle-modal');
+  const dupDesc = document.getElementById('dup-bundle-desc');
   const dupCancelBtn = document.getElementById('dup-bundle-cancel');
 
   function commitLoad(records, rates) {
     allRecords = [...allRecords, ...records];
-    bundles    = groupIntoBundles(allRecords);
+    bundles = groupIntoBundles(allRecords);
     geocodedPoints = [];  // reset so map re-geocodes with new addresses
     if (rates) {
       const issuedDate = new Date().toLocaleDateString('en-CA');
@@ -1462,11 +1462,11 @@
   }
 
   // ─── Delete Bundle Modal ──────────────────────────
-  const delModal      = document.getElementById('del-bundle-modal');
-  const delDesc       = document.getElementById('del-bundle-desc');
-  const delCancelBtn  = document.getElementById('del-bundle-cancel');
+  const delModal = document.getElementById('del-bundle-modal');
+  const delDesc = document.getElementById('del-bundle-desc');
+  const delCancelBtn = document.getElementById('del-bundle-cancel');
   const delConfirmBtn = document.getElementById('del-bundle-confirm');
-  let   pendingDelete = null;   // bundle queued for deletion
+  let pendingDelete = null;   // bundle queued for deletion
 
   function showDeleteConfirm(bundle) {
     delDesc.textContent = `Delete "${bundle.bundleName}"? All records and readings will be removed.`;
@@ -1482,7 +1482,7 @@
   delConfirmBtn.addEventListener('click', () => {
     delModal.classList.add('hidden');
     if (!pendingDelete) return;
-    const key  = pendingDelete.key;
+    const key = pendingDelete.key;
 
     // Archive rows before removing
     const removedRows = allRecords.filter(r =>
@@ -1506,7 +1506,7 @@
 
   // ─── Recover Deleted Bundles ──────────────────────
   const recoverModal = document.getElementById('recover-modal');
-  const recoverList  = document.getElementById('recover-list');
+  const recoverList = document.getElementById('recover-list');
   document.getElementById('recover-modal-close').addEventListener('click', () => {
     recoverModal.classList.add('hidden');
   });
@@ -1516,7 +1516,7 @@
     const existing = bundleList.querySelector('.recover-bar');
     if (existing) existing.remove();
 
-    const cutoff  = Date.now() - TWO_WEEKS;
+    const cutoff = Date.now() - TWO_WEEKS;
     const visible = deletedBundles.filter(d => d.deletedAt >= cutoff);
     if (!visible.length) return;
 
@@ -1535,7 +1535,7 @@
   }
 
   function openRecoverModal() {
-    const cutoff  = Date.now() - TWO_WEEKS;
+    const cutoff = Date.now() - TWO_WEEKS;
     const visible = deletedBundles.filter(d => d.deletedAt >= cutoff);
     recoverList.innerHTML = '';
     visible.forEach(d => {
@@ -1559,7 +1559,7 @@
           ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') !== d.key
         );
         allRecords = [...allRecords, ...d.rows];
-        bundles    = groupIntoBundles(allRecords);
+        bundles = groupIntoBundles(allRecords);
         deletedBundles = deletedBundles.filter(x => x !== d);
         saveDeletedBundles();
         saveRecordsBackup();
@@ -1584,7 +1584,7 @@
     const hasBundle = records.some(r => (r['Bundle'] || '').trim() !== '');
     return [...new Set(records.map(r => hasBundle
       ? ((r['Bundle'] || '').trim() || (r['City'] || '').trim() || 'Unknown')
-      : ((r['City']   || '').trim() || 'Unknown')
+      : ((r['City'] || '').trim() || 'Unknown')
     ))];
   }
 
@@ -1593,7 +1593,7 @@
     if (!files.length) return;
 
     let completed = 0;
-    let skipped   = 0;
+    let skipped = 0;
     const validRecordSets = [];
 
     files.forEach(file => {
@@ -1638,16 +1638,16 @@
 
   // ─── Per-bundle Email ─────────────────────────────
   function buildReportText(bundle) {
-    const rates      = bundleRates[bundle.key] || null;
-    const fmtRate    = (r) => r != null ? `$${r.toFixed(2)}` : '—';
-    const today      = new Date().toLocaleDateString('en-CA');
+    const rates = bundleRates[bundle.key] || null;
+    const fmtRate = (r) => r != null ? `$${r.toFixed(2)}` : '—';
+    const today = new Date().toLocaleDateString('en-CA');
     const issuedDate = rates?.issuedDate || today;
-    const routeStr   = bundle.mruIds.length
+    const routeStr = bundle.mruIds.length
       ? `A${bundle.mruArea} – ${bundle.routeNums.join(', ')}`
       : '—';
 
-    const sep  = '  ' + '─'.repeat(40);
-    const row  = (label, rate, read, total) =>
+    const sep = '  ' + '─'.repeat(40);
+    const row = (label, rate, read, total) =>
       `  ${label.padEnd(10)} ${fmtRate(rate).padEnd(8)} ${String(read).padStart(4)} / ${String(total)}`;
 
     return [
@@ -1664,11 +1664,11 @@
       '',
       '  Category   Rate     Read / Issued',
       sep,
-      row('Est 3',   rates?.est3  ?? null, bundle.est3Read,     bundle.est3),
-      row('Est 4–6', rates?.est46 ?? null, bundle.est46Read,    bundle.est46),
-      row('Est 7+',  rates?.est7p ?? null, bundle.est7plusRead, bundle.est7plus),
+      row('Est 3', rates?.est3 ?? null, bundle.est3Read, bundle.est3),
+      row('Est 4–6', rates?.est46 ?? null, bundle.est46Read, bundle.est46),
+      row('Est 7+', rates?.est7p ?? null, bundle.est7plusRead, bundle.est7plus),
       sep,
-      row('Total',   null,                 bundle.read,         bundle.total),
+      row('Total', null, bundle.read, bundle.total),
       '',
       `Meter Reader: ${readerName || '—'}`,
       `Signed:       ______________________________`,
@@ -1740,7 +1740,7 @@
     a.href = url; a.download = `meter-backup-${dateStr}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    try { localStorage.setItem(BACKUP_DATE_KEY, dateStr); } catch (_) {}
+    try { localStorage.setItem(BACKUP_DATE_KEY, dateStr); } catch (_) { }
     const bar = bundleList.querySelector('.backup-bar');
     if (bar) bar.remove();
   }
@@ -1748,7 +1748,7 @@
   function checkDailyBackup() {
     if (backupBarShown || !allRecords.length) return;
     const today = new Date().toLocaleDateString('en-CA');
-    try { if (localStorage.getItem(BACKUP_DATE_KEY) === today) return; } catch (_) {}
+    try { if (localStorage.getItem(BACKUP_DATE_KEY) === today) return; } catch (_) { }
     backupBarShown = true;
     const existing = bundleList.querySelector('.backup-bar');
     if (existing) existing.remove();
@@ -1789,36 +1789,36 @@
 
     markAsSent(bundle.key);
 
-    const safeName   = bundle.bundleName.replace(/\s+/g, '_');
-    const dateStr    = new Date().toISOString().slice(0, 10);
+    const safeName = bundle.bundleName.replace(/\s+/g, '_');
+    const dateStr = new Date().toISOString().slice(0, 10);
     const csvContent = buildBundleCSV(bundle);
     const reportText = buildReportText(bundle);
-    const csvFile    = new File([csvContent], `bundle_${safeName}_${dateStr}.csv`, { type: 'text/csv' });
+    const csvFile = new File([csvContent], `bundle_${safeName}_${dateStr}.csv`, { type: 'text/csv' });
     const reportFile = new File([reportText], `report_${safeName}_${dateStr}.txt`, { type: 'text/plain' });
-    const subject    = `Meter Reading — Bundle ${bundle.bundleName} — ${new Date().toLocaleDateString('en-US')}`;
+    const subject = `Meter Reading — Bundle ${bundle.bundleName} — ${new Date().toLocaleDateString('en-US')}`;
     const recipients = 'rovana.adjodha@metutilities.com,Sue.Vaillancourt@metutilities.com,Brandon.Bain@metutilities.com,mike.borneman@metutilities.com';
 
     if (provider === 'share') {
-      navigator.share({ files: [csvFile, reportFile], title: subject, text: reportText }).catch(() => {});
+      navigator.share({ files: [csvFile, reportFile], title: subject, text: reportText }).catch(() => { });
       return;
     }
 
     // Download both files before opening the compose window
     [csvFile, reportFile].forEach(f => {
       const url = URL.createObjectURL(f);
-      const a   = document.createElement('a');
+      const a = document.createElement('a');
       a.href = url; a.download = f.name;
       a.click();
       URL.revokeObjectURL(url);
     });
 
-    const to   = encodeURIComponent(recipients);
-    const su   = encodeURIComponent(subject);
+    const to = encodeURIComponent(recipients);
+    const su = encodeURIComponent(subject);
     const body = encodeURIComponent(reportText + '\n\n(See attached CSV for full reading data.)');
 
     const urls = {
-      gmail:   `https://mail.google.com/mail/?view=cm&to=${to}&su=${su}&body=${body}`,
-      yahoo:   `https://compose.mail.yahoo.com/?to=${to}&subject=${su}&body=${body}`,
+      gmail: `https://mail.google.com/mail/?view=cm&to=${to}&su=${su}&body=${body}`,
+      yahoo: `https://compose.mail.yahoo.com/?to=${to}&subject=${su}&body=${body}`,
       outlook: `https://outlook.live.com/mail/deeplink/compose?to=${to}&subject=${su}&body=${body}`,
     };
 
@@ -1895,7 +1895,7 @@
     try {
       const saved = localStorage.getItem(READER_KEY);
       if (saved) setReaderName(saved);
-    } catch (_) {}
+    } catch (_) { }
     // Restore any previously saved records
     const restored = loadRecordsBackup();
 
@@ -1911,7 +1911,7 @@
 
     // Register service worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js').catch(() => { });
     }
   }
 
