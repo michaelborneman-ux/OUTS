@@ -218,7 +218,6 @@
   }
   updateClock();
   setInterval(updateClock, 10000);
-  document.getElementById('app-version').textContent = APP_VERSION;
 
   // ─── Persistence ──────────────────────────────────
   const SENT_KEY    = 'mtr_sent_bundles';
@@ -958,6 +957,10 @@
     });
 
     bundleList.appendChild(frag);
+    const verEl = document.createElement('div');
+    verEl.className = 'app-version';
+    verEl.textContent = APP_VERSION;
+    bundleList.appendChild(verEl);
     updateRecoverBar();
   }
 
