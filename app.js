@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v4.3';
+  const APP_VERSION = 'v4.4';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -1679,9 +1679,9 @@
     const rows = bundle.rows;
     if (!rows.length) return '';
 
-    // Collect headers: original keys + ensure SKIP / SKIP_OTHER included
+    // Collect headers: original keys + ensure SKIP / SKIP_OTHER / COMMENTS included
     const baseHeaders = Object.keys(rows[0]);
-    const extra = ['SKIP', 'SKIP_OTHER'].filter(k => !baseHeaders.includes(k));
+    const extra = ['SKIP', 'SKIP_OTHER', 'COMMENTS'].filter(k => !baseHeaders.includes(k));
     const headers = [...baseHeaders, ...extra];
 
     function csvCell(val) {
@@ -1709,7 +1709,7 @@
   function buildAllRecordsCSV() {
     if (!allRecords.length) return '';
     const baseHeaders = Object.keys(allRecords[0]);
-    const extra = ['SKIP', 'SKIP_OTHER'].filter(k => !baseHeaders.includes(k));
+    const extra = ['SKIP', 'SKIP_OTHER', 'COMMENTS'].filter(k => !baseHeaders.includes(k));
     const headers = [...baseHeaders, ...extra];
     function csvCell(val) {
       const s = val == null ? '' : String(val);
