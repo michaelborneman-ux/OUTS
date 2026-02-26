@@ -105,6 +105,7 @@
   const cardDtSkip      = document.getElementById('card-dt-skip');
   const cardDtSkipOther = document.getElementById('card-dt-skip-other');
   const cardDtReadDate  = document.getElementById('card-dt-read-date');
+  const cardDtComments  = document.getElementById('card-dt-comments');
   const cardDtSaveBtn   = document.getElementById('card-dt-save-btn');
   const cardNavPos      = document.getElementById('card-nav-pos');
   const cardPrevBtn     = document.getElementById('card-prev-btn');
@@ -1045,16 +1046,18 @@
     cardDtSpec.textContent = spec;
     cardDtSpecWrap.classList.toggle('hidden', !spec);
 
-    // Pre-fill reading, skip, and date
+    // Pre-fill reading, skip, comments, and date
     cardDtReading.value  = (row['READING'] || '').trim();
     const savedSkip = row['SKIP'] || '';
     cardDtSkip.value = savedSkip;
     cardDtSkipOther.value = row['SKIP_OTHER'] || '';
     cardDtSkipOther.classList.toggle('hidden', savedSkip !== 'Other');
+    cardDtComments.value = row['COMMENTS'] || '';
     const today      = new Date().toLocaleDateString('en-CA');
     const savedDate  = (row['READ DATE'] || '').trim();
     const isComplete = (row['READING'] || '').trim() !== '' ||
-                       ((row['SKIP'] || '').trim() !== '' && (row['SKIP'] || '').trim() !== 'Other');
+                       ((row['SKIP'] || '').trim() !== '' && (row['SKIP'] || '').trim() !== 'Other') ||
+                       (row['COMMENTS'] || '').trim() !== '';
     cardDtReadDate.value    = savedDate || today;
     cardDtReadDate.readOnly = isComplete;
     cardDtReadDate.classList.toggle('date-locked', isComplete);
@@ -1085,20 +1088,22 @@
 
   // Save reading handler
   cardDtSaveBtn.addEventListener('click', () => {
-    const reading = cardDtReading.value.trim();
-    const skip    = cardDtSkip.value;
-    const date    = cardDtReadDate.value;
+    const reading  = cardDtReading.value.trim();
+    const skip     = cardDtSkip.value;
+    const date     = cardDtReadDate.value;
+    const comments = cardDtComments.value.trim();
 
     if (reading && skip) {
       showToast('Cannot have both a reading and a skip — clear one first.', true);
       return;
     }
 
-    const isComplete = reading !== '' || (skip !== '' && skip !== 'Other');
+    const isComplete = reading !== '' || (skip !== '' && skip !== 'Other') || comments !== '';
     currentRow['READING']    = reading;
     currentRow['READ DATE']  = isComplete ? date : '';
     currentRow['SKIP']       = skip;
     currentRow['SKIP_OTHER'] = skip === 'Other' ? cardDtSkipOther.value.trim() : '';
+    currentRow['COMMENTS']   = comments;
 
     updateMapMarkerForRow(currentRow);  // refresh marker color immediately if on map
 
@@ -1384,6 +1389,8 @@
       const serial   = row['Serial No.']      || '';
       const reading  = (row['READING']        || '').trim();
       const skip     = (row['SKIP']           || '').trim();
+      const readDate = (row['READ DATE']      || '').trim();
+      const comment  = (row['COMMENTS']       || '').trim();
       const estVal   = parseInt(row['# EST']  || '0', 10);
 
       let estClass = 'est-ok';
@@ -1410,6 +1417,7 @@
           <div class="addr-street">${esc(address) || '—'}</div>
           ${meterMeta ? `<div class="addr-meter">${esc(meterMeta)}</div>` : ''}
           ${spec ? `<div class="addr-spec">${esc(spec)}</div>` : ''}
+          ${(readDate || comment) ? `<div class="addr-read-info">${readDate ? `<span class="addr-read-date">${esc(readDate)}</span>` : ''}${comment ? `<span class="addr-comment">${esc(comment)}</span>` : ''}</div>` : ''}
         </div>
         <div class="addr-right">
           ${skip    ? `<span class="addr-status-badge addr-skip-badge">Skip</span>` : ''}
@@ -1772,6 +1780,8 @@
     pendingEmailBundle = null;
     emailProviderModal.classList.add('hidden');
     if (!bundle) return;
+
+    markAsSent(bundle.key);
 
     const safeName   = bundle.bundleName.replace(/\s+/g, '_');
     const dateStr    = new Date().toISOString().slice(0, 10);
