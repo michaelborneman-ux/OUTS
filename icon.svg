@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Arc path for curved top text -->
+    <path id="arcTop" d="M 28 118 Q 256 18 484 118"/>
+  </defs>
+
+  <!-- White background with rounded corners (maskable safe zone) -->
+  <rect width="512" height="512" rx="76" fill="#ffffff"/>
+
+  <!-- Outer triangle — outline only -->
+  <polygon
+    points="256,122 48,442 464,442"
+    fill="#ffffff"
+    stroke="#1a5db5"
+    stroke-width="24"
+    stroke-linejoin="miter"/>
+
+  <!-- Inner triangle — solid fill -->
+  <polygon
+    points="256,218 146,394 366,394"
+    fill="#1a5db5"/>
+
+  <!-- "M.E.T. UTILITIES" — curved along arc -->
+  <text
+    font-family="'Arial Black', 'Arial', sans-serif"
+    font-weight="900"
+    font-size="40"
+    fill="#1a5db5"
+    letter-spacing="2">
+    <textPath href="#arcTop" startOffset="50%" text-anchor="middle">M.E.T. UTILITIES</textPath>
+  </text>
+
+  <!-- "MANAGEMENT LTD." — straight text below triangle -->
+  <text
+    x="256" y="494"
+    font-family="'Arial Black', 'Arial', sans-serif"
+    font-weight="900"
+    font-size="36"
+    fill="#1a5db5"
+    text-anchor="middle"
+    letter-spacing="1">MANAGEMENT LTD.</text>
+</svg>

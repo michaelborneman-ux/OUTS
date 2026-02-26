@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1a2438">
+  <title>Meter Reader</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-512.png">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- SPLASH / LOADING SCREEN                         -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="view-splash" class="view">
+    <div class="splash-inner">
+      <div class="splash-logo">
+        <span class="logo-letter" id="spl-m">M</span>
+        <span class="logo-letter" id="spl-e">E</span>
+        <span class="logo-letter" id="spl-t">T</span>
+        <span class="logo-outs"   id="spl-outs">OUTS</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- HOME VIEW — Bundle List                         -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="view-home" class="view hidden">
+
+    <!-- Top bar -->
+    <div class="top-bar">
+      <span class="top-bar-date" id="home-date"></span>
+      <span class="top-bar-time" id="home-time"></span>
+    </div>
+
+    <!-- Header -->
+    <div class="home-header">
+      <div class="home-header-row">
+        <div>
+          <h1 class="home-title">Meter Reader</h1>
+          <p class="home-reader-name" id="home-reader-name">Field Reader</p>
+        </div>
+        <label class="reload-btn" for="csv-file-input" title="Load new CSV">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </label>
+        <input type="file" id="csv-file-input" accept=".csv" multiple hidden>
+      </div>
+    </div>
+
+    <!-- Summary stats bar -->
+    <div class="summary-bar" id="summary-bar">
+      <div class="summary-item">
+        <span class="summary-val" id="sum-bundles">0</span>
+        <span class="summary-label">Bundles</span>
+      </div>
+      <div class="summary-divider"></div>
+      <div class="summary-item">
+        <span class="summary-val" id="sum-cards">0</span>
+        <span class="summary-label">Total Cards</span>
+      </div>
+      <div class="summary-divider"></div>
+      <div class="summary-item">
+        <span class="summary-val" id="sum-read">0</span>
+        <span class="summary-label">Read</span>
+      </div>
+      <div class="summary-divider"></div>
+      <div class="summary-item">
+        <span class="summary-val" id="sum-sent">0</span>
+        <span class="summary-label">Sent</span>
+      </div>
+    </div>
+
+    <!-- Search bar -->
+    <div class="bd-search-bar">
+      <div class="bd-search-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="bd-search-icon">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" id="home-search" class="bd-search-input"
+               placeholder="Search address, meter #, or size…"
+               autocomplete="off" autocorrect="off" autocapitalize="off">
+      </div>
+    </div>
+
+    <!-- CSV upload prompt (shown before any file is loaded) -->
+    <div class="upload-prompt" id="upload-prompt">
+      <div class="upload-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
+      </div>
+      <p class="upload-title">No route loaded</p>
+      <p class="upload-msg">Load a CSV file to begin your reading session</p>
+      <label class="upload-cta" for="csv-file-input">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        Load CSV File
+      </label>
+    </div>
+
+    <!-- Bundle list (recover bar injected here by JS when needed) -->
+    <div class="bundle-list" id="bundle-list"></div>
+
+    <!-- Bottom nav -->
+    <nav class="bottom-nav">
+      <div class="bottom-nav-item active" id="home-nav-bundles">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span>Bundles</span>
+      </div>
+      <div class="bottom-nav-item" id="home-nav-map">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+          <line x1="8" y1="2" x2="8" y2="18"/>
+          <line x1="16" y1="6" x2="16" y2="22"/>
+        </svg>
+        <span>Map</span>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- BUNDLE DETAIL VIEW — Address List               -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="view-bundle" class="view hidden">
+
+    <!-- Top bar -->
+    <div class="top-bar">
+      <span class="top-bar-date" id="bd-date"></span>
+      <span class="top-bar-time" id="bd-time"></span>
+    </div>
+
+    <!-- Header -->
+    <div class="bd-header">
+      <div class="bd-header-row1">
+        <button class="back-btn" id="bundle-back-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Bundles
+        </button>
+        <div class="bd-header-row1-right">
+          <button class="bd-geocode-btn" id="bd-report-btn" title="View daily report totals">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <line x1="10" y1="9" x2="8" y2="9"/>
+            </svg>
+            Report
+          </button>
+          <button class="bd-geocode-btn" id="bd-geocode-btn" title="Clear geocode cache and re-geocode this bundle">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+            </svg>
+            Re-geocode
+          </button>
+          <span class="status-badge" id="bd-status-badge"></span>
+        </div>
+      </div>
+      <div class="bd-header-row2">
+        <div class="bd-routes" id="bd-routes"></div>
+        <h1 class="bd-title" id="bd-title"></h1>
+        <div class="bd-area" id="bd-area"></div>
+      </div>
+      <div class="bd-progress-count">
+        <span class="bd-count-label" id="bd-count-label"></span>
+        <span class="bd-count-pct" id="bd-count-pct"></span>
+      </div>
+      <div class="bd-progress-bar-wrap">
+        <div class="bd-progress-fill" id="bd-progress-fill"></div>
+      </div>
+      <div class="bd-stats-row">
+        <div class="bd-stat">
+          <span class="bd-stat-label">Cards</span>
+          <span class="bd-stat-val" id="bd-total"></span>
+        </div>
+        <div class="bd-stat">
+          <span class="bd-stat-label">3 Est</span>
+          <span class="bd-stat-val"><span class="bd-stat-complete" id="bd-est3r"></span>/<span id="bd-est3"></span></span>
+        </div>
+        <div class="bd-stat">
+          <span class="bd-stat-label">4-6 Est</span>
+          <span class="bd-stat-val"><span class="bd-stat-complete" id="bd-est46r"></span>/<span id="bd-est46"></span></span>
+        </div>
+        <div class="bd-stat">
+          <span class="bd-stat-label">7+ Est</span>
+          <span class="bd-stat-val"><span class="bd-stat-complete" id="bd-est7pr"></span>/<span id="bd-est7p"></span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reader bar -->
+    <div class="bd-reader-bar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+      <span id="bd-reader-name"></span>
+    </div>
+
+    <!-- Search bar -->
+    <div class="bd-search-bar">
+      <div class="bd-search-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="bd-search-icon">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="search" id="bd-search" class="bd-search-input"
+               placeholder="Search address, meter #, or size…"
+               autocomplete="off" autocorrect="off" autocapitalize="off">
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="bd-filter-bar">
+      <button class="bd-filter-btn" id="bd-filter-missed">Missed</button>
+      <button class="bd-filter-btn" id="bd-filter-skipped">Skipped</button>
+    </div>
+
+    <!-- Address list -->
+    <div class="address-list" id="address-list"></div>
+
+    <!-- Bottom nav -->
+    <nav class="bottom-nav">
+      <div class="bottom-nav-item active" id="bd-back-nav">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span>Bundles</span>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- CARD DETAIL VIEW — Data Entry                   -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="view-card" class="view hidden">
+
+    <!-- Top bar -->
+    <div class="top-bar">
+      <span class="top-bar-date" id="card-dt-date"></span>
+      <span class="top-bar-time" id="card-dt-time"></span>
+    </div>
+
+    <!-- Header -->
+    <div class="card-dt-header">
+      <div class="card-dt-nav-row">
+        <button class="back-btn" id="card-back-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          <span id="card-back-label">List</span>
+        </button>
+        <div class="card-dt-record-nav">
+          <button class="card-dt-nav-btn" id="card-prev-btn" title="Previous record">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+          <span class="card-dt-nav-pos" id="card-nav-pos"></span>
+          <button class="card-dt-nav-btn" id="card-next-btn" title="Next record">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="card-dt-seq" id="card-dt-seq"></div>
+      <h1 class="card-dt-address" id="card-dt-address"></h1>
+    </div>
+
+    <!-- Scrollable body -->
+    <div class="card-dt-body">
+
+      <!-- Info fields -->
+      <div class="card-dt-section">
+        <div class="card-dt-field-row">
+          <span class="card-dt-label">City</span>
+          <span class="card-dt-val" id="card-dt-city"></span>
+        </div>
+        <div class="card-dt-field-row" id="card-dt-loc-row">
+          <span class="card-dt-label">Location</span>
+          <span class="card-dt-val" id="card-dt-loc"></span>
+        </div>
+        <div class="card-dt-field-row">
+          <span class="card-dt-label">Meter Size</span>
+          <span class="card-dt-val" id="card-dt-mtr-size"></span>
+        </div>
+        <div class="card-dt-field-row">
+          <span class="card-dt-label">Meter #</span>
+          <span class="card-dt-val" id="card-dt-serial"></span>
+        </div>
+        <div class="card-dt-field-row">
+          <span class="card-dt-label">Est #</span>
+          <span class="card-dt-val" id="card-dt-est"></span>
+        </div>
+      </div>
+
+      <!-- Special Instructions (hidden when empty) -->
+      <div class="card-dt-spec-block" id="card-dt-spec-wrap">
+        <div class="card-dt-spec-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          Special Instructions
+        </div>
+        <div class="card-dt-spec-text" id="card-dt-spec"></div>
+      </div>
+
+      <!-- Reading entry -->
+      <div class="card-dt-section">
+        <div class="card-dt-input-group">
+          <label class="card-dt-input-label" for="card-dt-reading">Reading</label>
+          <input type="text" id="card-dt-reading" class="card-dt-reading-input"
+                 placeholder="Enter meter reading…" inputmode="numeric" autocomplete="off">
+        </div>
+      </div>
+
+      <!-- Skip reason -->
+      <div class="card-dt-section">
+        <div class="card-dt-input-group">
+          <label class="card-dt-input-label" for="card-dt-skip">Skip</label>
+          <select id="card-dt-skip" class="card-dt-select">
+            <option value="">— No Skip —</option>
+            <option value="Meter Removed">Meter Removed</option>
+            <option value="Condensation">Condensation</option>
+            <option value="Unsafe Condition">Unsafe Condition</option>
+            <option value="Meter Under Porch">Meter Under Porch</option>
+            <option value="Meter Damaged">Meter Damaged</option>
+            <option value="Special Arrangement">Special Arrangement</option>
+            <option value="Dead Battery">Dead Battery</option>
+            <option value="Other">Other</option>
+          </select>
+          <input type="text" id="card-dt-skip-other" class="card-dt-skip-other hidden"
+                 placeholder="Enter skip reason…" autocorrect="off" autocapitalize="on">
+        </div>
+      </div>
+
+      <!-- Save -->
+      <div class="card-dt-save-wrap">
+        <button class="card-dt-save-btn" id="card-dt-save-btn">Save Reading</button>
+      </div>
+
+      <!-- Date -->
+      <div class="card-dt-section">
+        <div class="card-dt-input-group">
+          <label class="card-dt-input-label" for="card-dt-read-date">Read Date</label>
+          <input type="date" id="card-dt-read-date" class="card-dt-date-input">
+        </div>
+      </div>
+
+    </div><!-- /.card-dt-body -->
+
+    <!-- Bottom nav -->
+    <nav class="bottom-nav">
+      <div class="bottom-nav-item active" id="card-back-nav">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        <span id="card-back-nav-label">List</span>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- MAP VIEW — Global address map                   -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="view-map" class="view hidden">
+
+    <!-- Top bar -->
+    <div class="top-bar">
+      <span class="top-bar-date" id="map-date"></span>
+      <span class="top-bar-time" id="map-time"></span>
+    </div>
+
+    <!-- Header -->
+    <div class="home-header">
+      <div class="home-header-row">
+        <div>
+          <h1 class="home-title">Map View</h1>
+          <p class="home-reader-name" id="map-reader-name">Field Reader</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bundle filter dropdown -->
+    <div class="map-filter-bar">
+      <select id="map-bundle-filter" class="map-bundle-select">
+        <option value="">All Bundles</option>
+      </select>
+    </div>
+
+    <!-- Geocode progress bar -->
+    <div class="map-geocode-bar hidden" id="map-geocode-bar">
+      <div class="map-geocode-label" id="map-geocode-label">Geocoding addresses…</div>
+      <div class="map-geocode-track">
+        <div class="map-geocode-fill" id="map-geocode-fill"></div>
+      </div>
+    </div>
+
+    <!-- Not-found badge (shown when some addresses failed to geocode) -->
+    <div class="map-notfound-bar hidden" id="map-notfound-bar">
+      <span id="map-notfound-label"></span>
+      <button class="map-notfound-btn" id="map-notfound-btn">Fix</button>
+    </div>
+
+    <!-- Map container (Leaflet renders here) -->
+    <div class="map-container" id="map-container"></div>
+
+    <!-- Legend -->
+    <div class="map-legend">
+      <span class="map-legend-dot map-dot-unread"></span><span>Unread</span>
+      <span class="map-legend-dot map-dot-read"></span><span>Read</span>
+      <span class="map-legend-dot map-dot-skip"></span><span>Skipped</span>
+      <span class="map-legend-dot map-dot-you"></span><span>You</span>
+    </div>
+
+    <!-- Bottom nav -->
+    <nav class="bottom-nav">
+      <div class="bottom-nav-item" id="map-nav-bundles">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span>Bundles</span>
+      </div>
+      <div class="bottom-nav-item active" id="map-nav-map">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+          <line x1="8" y1="2" x2="8" y2="18"/>
+          <line x1="16" y1="6" x2="16" y2="22"/>
+        </svg>
+        <span>Map</span>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- TOTALS VIEW — Daily Report                       -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="view-totals" class="view hidden">
+
+    <!-- Header -->
+    <div class="bd-header">
+      <div class="bd-header-row1">
+        <button class="back-btn" id="totals-back-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+          Bundle
+        </button>
+        <button class="bd-geocode-btn" id="totals-print-btn" title="Print report">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <polyline points="6 9 6 2 18 2 18 9"/>
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+            <rect x="6" y="14" width="12" height="8"/>
+          </svg>
+          Print
+        </button>
+      </div>
+    </div>
+
+    <!-- Report scroll area -->
+    <div class="totals-scroll">
+      <div class="report-card" id="totals-body">
+        <!-- populated by showTotalsView() -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Email Provider Picker Modal -->
+  <div id="email-provider-modal" class="modal-overlay hidden">
+    <div class="modal-sheet">
+      <h2 class="modal-title">Send Bundle</h2>
+      <p class="modal-desc">Files will download automatically — choose where to compose your email.</p>
+      <div class="email-provider-grid">
+        <button class="email-provider-btn" id="epm-gmail">
+          <span class="email-provider-icon epi-gmail">G</span>
+          Gmail
+        </button>
+        <button class="email-provider-btn" id="epm-yahoo">
+          <span class="email-provider-icon epi-yahoo">Y!</span>
+          Yahoo
+        </button>
+        <button class="email-provider-btn" id="epm-outlook">
+          <span class="email-provider-icon epi-outlook">O</span>
+          Outlook
+        </button>
+        <button class="email-provider-btn" id="epm-mailto">
+          <span class="email-provider-icon epi-default">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <rect x="2" y="4" width="20" height="16" rx="2"/>
+              <polyline points="2,4 12,13 22,4"/>
+            </svg>
+          </span>
+          Default Mail
+        </button>
+      </div>
+      <button class="email-share-btn hidden" id="email-provider-share">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:middle;margin-right:6px">
+          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+          <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+        Share with file attachments
+      </button>
+      <div class="modal-actions" style="margin-top:4px">
+        <button class="modal-cancel" id="email-provider-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bundle Rates Modal -->
+  <div id="rate-modal" class="modal-overlay hidden">
+    <div class="modal-sheet">
+      <div class="modal-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="1" x2="12" y2="23"/>
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+      </div>
+      <h2 class="modal-title">Bundle Rates</h2>
+      <p class="modal-desc">Enter the per-card rates for the daily report.</p>
+      <div class="rate-rows">
+        <div class="rate-row">
+          <span class="rate-row-label">Est 3</span>
+          <div class="rate-input-wrap">
+            <span class="rate-dollar">$</span>
+            <input type="number" id="rate-est3" class="rate-input" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+        <div class="rate-row">
+          <span class="rate-row-label">Est 4–6</span>
+          <div class="rate-input-wrap">
+            <span class="rate-dollar">$</span>
+            <input type="number" id="rate-est46" class="rate-input" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+        <div class="rate-row">
+          <span class="rate-row-label">Est 7+</span>
+          <div class="rate-input-wrap">
+            <span class="rate-dollar">$</span>
+            <input type="number" id="rate-est7p" class="rate-input" step="0.01" min="0" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-cancel" id="rate-modal-cancel">Cancel</button>
+        <button class="modal-confirm" id="rate-modal-confirm">Load Bundle</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- READER NAME MODAL                               -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="reader-name-modal" class="modal-overlay hidden">
+    <div class="modal-sheet">
+      <div class="modal-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      </div>
+      <h2 class="modal-title">Reader Name</h2>
+      <p class="modal-desc">Enter your name to begin this bundle</p>
+      <input type="text" id="reader-name-input" class="modal-input"
+             placeholder="Your name…" autocomplete="name" autocorrect="off">
+      <div class="modal-actions">
+        <button class="modal-cancel" id="reader-name-cancel">Cancel</button>
+        <button class="modal-confirm" id="reader-name-confirm">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recover Deleted Bundles Modal -->
+  <div id="recover-modal" class="modal-overlay hidden">
+    <div class="modal-sheet recover-modal-sheet">
+      <div class="modal-icon" style="background:#f0fdf4;color:#16a34a;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="1 4 1 10 7 10"/>
+          <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+        </svg>
+      </div>
+      <h2 class="modal-title">Recover Deleted Bundles</h2>
+      <p class="modal-desc">Deleted bundles are kept for 2 weeks. Tap a bundle to restore it.</p>
+      <div class="recover-list" id="recover-list"></div>
+      <div class="modal-actions" style="margin-top:12px;">
+        <button class="modal-cancel" id="recover-modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Bundle Confirmation Modal -->
+  <div id="del-bundle-modal" class="modal-overlay hidden">
+    <div class="modal-sheet">
+      <div class="modal-icon modal-icon-warn">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+          <path d="M10 11v6M14 11v6"/>
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+      </div>
+      <h2 class="modal-title">Delete Bundle?</h2>
+      <p class="modal-desc" id="del-bundle-desc">All records and readings for this bundle will be removed.</p>
+      <div class="modal-actions">
+        <button class="modal-cancel" id="del-bundle-cancel">Cancel</button>
+        <button class="modal-confirm modal-confirm-warn" id="del-bundle-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Duplicate Bundle Warning Modal -->
+  <div id="dup-bundle-modal" class="modal-overlay hidden">
+    <div class="modal-sheet">
+      <div class="modal-icon modal-icon-warn">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <h2 class="modal-title">Bundle Already Loaded</h2>
+      <p class="modal-desc" id="dup-bundle-desc">This bundle has already been loaded. Loading it again would double the cards.</p>
+      <div class="modal-actions">
+        <button class="modal-confirm" id="dup-bundle-cancel">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Geocode Fix Modal -->
+  <div id="geocode-fix-modal" class="modal-overlay hidden">
+    <div class="modal-sheet recover-modal-sheet">
+      <div class="modal-icon" style="background:#fff4e0;color:#b45309;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </div>
+      <h2 class="modal-title">Addresses Not Found</h2>
+      <p class="modal-desc">Edit each address and tap Retry to place it on the map.</p>
+      <div class="recover-list" id="geocode-fix-list"></div>
+      <div class="modal-actions" style="margin-top:12px;">
+        <button class="modal-cancel" id="geocode-fix-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
