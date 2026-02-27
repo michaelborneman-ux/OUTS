@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v4.4';
+  const APP_VERSION = 'v4.5';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -179,6 +179,33 @@
   });
 
   mapBundleFilter.addEventListener('change', applyBundleFilter);
+
+  document.getElementById('map-geocode-btn').addEventListener('click', () => {
+    const key = mapBundleFilter.value;
+    const cache = loadGeoCache();
+    const targets = key ? bundles.filter(b => b.key === key) : bundles;
+    targets.forEach(bundle => {
+      bundle.rows.forEach(r => {
+        const num = (r['#'] || '').trim();
+        const street = (r['STREET'] || '').trim();
+        const city = (r['City'] || '').trim();
+        if (!street || !city) return;
+        const { cleanNum, cleanStreet } = stripUnitInfo(num, street);
+        const cacheKey = `${cleanNum} ${cleanStreet},${city}`.trim().toLowerCase();
+        delete cache[cacheKey];
+      });
+    });
+    saveGeoCache(cache);
+    if (key) {
+      geocodedPoints = geocodedPoints.filter(p => p.bundle.key !== key);
+      geocodeFailures = geocodeFailures.filter(f => f.bundle.key !== key);
+    } else {
+      geocodedPoints = [];
+      geocodeFailures = [];
+    }
+    geocodeStale = true;
+    showMapView();
+  });
 
   // Not-found bar + fix modal
   document.getElementById('map-notfound-btn').addEventListener('click', showGeocodeFix);
@@ -617,23 +644,6 @@
     }
   }
 
-  function forceGeocodeBundle(bundle) {
-    const cache = loadGeoCache();
-    bundle.rows.forEach(r => {
-      const num = (r['#'] || '').trim();
-      const street = (r['STREET'] || '').trim();
-      const city = (r['City'] || '').trim();
-      if (!street || !city) return;
-      const { cleanNum, cleanStreet } = stripUnitInfo(num, street);
-      const key = `${cleanNum} ${cleanStreet},${city}`.trim().toLowerCase();
-      delete cache[key];
-    });
-    saveGeoCache(cache);
-    geocodedPoints = geocodedPoints.filter(p => p.bundle !== bundle);
-    geocodeFailures = geocodeFailures.filter(f => f.bundle !== bundle);
-    geocodeStale = true;
-    showToast(`"${bundle.bundleName}" geocache cleared — open Map to re-geocode`);
-  }
 
   function addSingleMarker(coords, row, bundle) {
     const icon = makeCircleIcon(getMarkerColor(row));
@@ -1337,7 +1347,6 @@
   // ─── Bundle Detail View ───────────────────────────
   function showBundleDetail(bundle) {
     pendingBundle = null;
-    document.getElementById('bd-geocode-btn').onclick = () => forceGeocodeBundle(bundle);
     document.getElementById('bd-report-btn').onclick = () => showTotalsView(bundle);
 
     const status = getBundleStatus(bundle);

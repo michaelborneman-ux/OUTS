@@ -815,6 +815,13 @@ html, body {
   gap: 8px;
 }
 
+.bd-status-report {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
 .bd-geocode-btn {
   display: inline-flex;
   align-items: center;
@@ -1326,6 +1333,29 @@ html, body {
   border-bottom: none;
 }
 
+.card-dt-field-row-pair {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--divider);
+}
+
+.card-dt-field-row-pair:last-child {
+  border-bottom: none;
+}
+
+.card-dt-pair-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 14px;
+}
+
+.card-dt-pair-cell + .card-dt-pair-cell {
+  border-left: 1px solid var(--divider);
+}
+
 .card-dt-label {
   font-size: 0.8rem;
   color: var(--text-light);
@@ -1670,6 +1700,36 @@ html, body {
 }
 
 /* Bundle filter bar */
+.map-regeocode-bar {
+  background: var(--header-bg);
+  padding: 6px 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.map-regeocode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px;
+  color: rgba(255,255,255,0.75);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: inherit;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.map-regeocode-btn:hover {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
 .map-filter-bar {
   background: var(--header-bg);
   padding: 8px 16px;

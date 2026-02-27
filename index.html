@@ -161,24 +161,19 @@
           Bundles
         </button>
         <div class="bd-header-row1-right">
-          <button class="bd-geocode-btn" id="bd-report-btn" title="View daily report totals">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
-              <line x1="16" y1="13" x2="8" y2="13"/>
-              <line x1="16" y1="17" x2="8" y2="17"/>
-              <line x1="10" y1="9" x2="8" y2="9"/>
-            </svg>
-            Report
-          </button>
-          <button class="bd-geocode-btn" id="bd-geocode-btn" title="Clear geocode cache and re-geocode this bundle">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <polyline points="1 4 1 10 7 10"/>
-              <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
-            </svg>
-            Re-geocode
-          </button>
-          <span class="status-badge" id="bd-status-badge"></span>
+          <div class="bd-status-report">
+            <span class="status-badge" id="bd-status-badge"></span>
+            <button class="bd-geocode-btn" id="bd-report-btn" title="View daily report totals">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <line x1="10" y1="9" x2="8" y2="9"/>
+              </svg>
+              Report
+            </button>
+          </div>
         </div>
       </div>
       <div class="bd-header-row2">
@@ -305,21 +300,25 @@
           <span class="card-dt-label">City</span>
           <span class="card-dt-val" id="card-dt-city"></span>
         </div>
-        <div class="card-dt-field-row" id="card-dt-loc-row">
-          <span class="card-dt-label">Location</span>
-          <span class="card-dt-val" id="card-dt-loc"></span>
+        <div class="card-dt-field-row-pair" id="card-dt-loc-row">
+          <div class="card-dt-pair-cell">
+            <span class="card-dt-label">Location</span>
+            <span class="card-dt-val" id="card-dt-loc"></span>
+          </div>
+          <div class="card-dt-pair-cell">
+            <span class="card-dt-label">Est #</span>
+            <span class="card-dt-val" id="card-dt-est"></span>
+          </div>
         </div>
-        <div class="card-dt-field-row">
-          <span class="card-dt-label">Meter Size</span>
-          <span class="card-dt-val" id="card-dt-mtr-size"></span>
-        </div>
-        <div class="card-dt-field-row">
-          <span class="card-dt-label">Meter #</span>
-          <span class="card-dt-val" id="card-dt-serial"></span>
-        </div>
-        <div class="card-dt-field-row">
-          <span class="card-dt-label">Est #</span>
-          <span class="card-dt-val" id="card-dt-est"></span>
+        <div class="card-dt-field-row-pair">
+          <div class="card-dt-pair-cell">
+            <span class="card-dt-label">Meter Size</span>
+            <span class="card-dt-val" id="card-dt-mtr-size"></span>
+          </div>
+          <div class="card-dt-pair-cell">
+            <span class="card-dt-label">Meter #</span>
+            <span class="card-dt-val" id="card-dt-serial"></span>
+          </div>
         </div>
       </div>
 
@@ -343,6 +342,11 @@
         </div>
       </div>
 
+      <!-- Save -->
+      <div class="card-dt-save-wrap">
+        <button class="card-dt-save-btn" id="card-dt-save-btn">Save Reading</button>
+      </div>
+
       <!-- Skip reason -->
       <div class="card-dt-section">
         <div class="card-dt-input-group">
@@ -361,11 +365,6 @@
           <input type="text" id="card-dt-skip-other" class="card-dt-skip-other hidden"
                  placeholder="Enter skip reason…" autocorrect="off" autocapitalize="on">
         </div>
-      </div>
-
-      <!-- Save -->
-      <div class="card-dt-save-wrap">
-        <button class="card-dt-save-btn" id="card-dt-save-btn">Save Reading</button>
       </div>
 
       <!-- Date -->
@@ -418,6 +417,17 @@
           <p class="home-reader-name" id="map-reader-name">Field Reader</p>
         </div>
       </div>
+    </div>
+
+    <!-- Re-geocode -->
+    <div class="map-regeocode-bar">
+      <button class="map-regeocode-btn" id="map-geocode-btn" title="Clear geocode cache and re-geocode">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polyline points="1 4 1 10 7 10"/>
+          <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
+        </svg>
+        Re-geocode
+      </button>
     </div>
 
     <!-- Bundle filter dropdown -->
