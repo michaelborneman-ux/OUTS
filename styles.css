@@ -1348,12 +1348,16 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 11px 14px;
+  gap: 6px;
+  padding: 11px 10px;
 }
 
 .card-dt-pair-cell + .card-dt-pair-cell {
   border-left: 1px solid var(--divider);
+}
+
+.card-dt-pair-cell .card-dt-label {
+  min-width: 0;
 }
 
 .card-dt-label {
