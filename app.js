@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v4.7';
+  const APP_VERSION = 'v4.8';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -489,7 +489,7 @@
       showToast('Geolocation is not supported by this browser.', true);
       return;
     }
-    leafletMap.locate({ setView: true, maxZoom: 17, watch: true });
+    leafletMap.locate({ setView: false, watch: true });
     gpsWatching = true;
     resetGpsTimer();
   }
@@ -513,6 +513,7 @@
       userLocationMarker = L.marker(e.latlng, { icon, zIndexOffset: 1000 })
         .addTo(leafletMap)
         .bindPopup('<strong>Your Location</strong>');
+      leafletMap.setView(e.latlng, 17);
     }
   }
 
