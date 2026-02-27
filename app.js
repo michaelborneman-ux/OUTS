@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v4.6';
+  const APP_VERSION = 'v4.7';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -37,6 +37,9 @@
   let geocodeFailures = [];     // records that could not be geocoded
   let geocodeStale = false;  // set by forceGeocodeBundle — forces re-geocode on next map open
   let userLocationMarker = null;  // L.marker for the user's GPS position
+  let gpsAutoStopTimer = null;
+  let gpsWatching = false;
+  const GPS_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
   let bdShowMissed = false;  // bundle list filter: unread cards
   let bdShowSkipped = false;  // bundle list filter: skipped cards
   let backupBarShown = false;  // session flag — show daily backup bar only once
@@ -174,6 +177,7 @@
   homeNavMap.addEventListener('click', showMapView);
   mapNavBundles.addEventListener('click', () => {
     if (leafletMap) leafletMap.stopLocate();
+    clearGpsTimer();
     viewMap.classList.add('hidden');
     viewHome.classList.remove('hidden');
   });
@@ -456,8 +460,27 @@
     new LocateControl().addTo(leafletMap);
     leafletMap.on('locationfound', onLocationFound);
     leafletMap.on('locationerror', onLocationError);
+    leafletMap.on('move', resetGpsTimer);
+    leafletMap.on('zoom', resetGpsTimer);
+    leafletMap.on('click', resetGpsTimer);
 
     mapInitialized = true;
+  }
+
+  function resetGpsTimer() {
+    if (!gpsWatching) return;
+    clearTimeout(gpsAutoStopTimer);
+    gpsAutoStopTimer = setTimeout(() => {
+      if (leafletMap) leafletMap.stopLocate();
+      gpsWatching = false;
+      showToast('GPS stopped after 5 minutes of inactivity.');
+    }, GPS_TIMEOUT_MS);
+  }
+
+  function clearGpsTimer() {
+    clearTimeout(gpsAutoStopTimer);
+    gpsAutoStopTimer = null;
+    gpsWatching = false;
   }
 
   function startLocating() {
@@ -467,6 +490,8 @@
       return;
     }
     leafletMap.locate({ setView: true, maxZoom: 17, watch: true });
+    gpsWatching = true;
+    resetGpsTimer();
   }
 
   function onLocationFound(e) {
@@ -985,6 +1010,7 @@
   // ─── Navigation ───────────────────────────────────
   function goHome() {
     if (leafletMap) leafletMap.stopLocate();
+    clearGpsTimer();
     viewBundle.classList.add('hidden');
     viewCard.classList.add('hidden');
     viewMap.classList.add('hidden');
