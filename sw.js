@@ -3,7 +3,7 @@
    Enables offline use after first load
    ================================================ */
 
-const CACHE_NAME = 'meter-reader-v4.5.2';
+const CACHE_NAME = 'meter-reader-v4.6';
 const CACHE_FILES = [
   './',
   './index.html',
