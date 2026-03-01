@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v4.8';
+  const APP_VERSION = 'v5.0';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -1587,14 +1587,74 @@
         <button class="recover-item-btn">Restore</button>
       `;
       item.querySelector('.recover-item-btn').addEventListener('click', () => {
-        // Remove any existing records with the same bundle key before restoring
-        const alreadyLoaded = allRecords.some(r =>
+        const currentForBundle = allRecords.filter(r =>
           ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') === d.key
         );
+        const alreadyLoaded = currentForBundle.length > 0;
+
+        let restoredRows;
+        if (!alreadyLoaded) {
+          // Simple restore — no conflict
+          restoredRows = d.rows;
+        } else {
+          // Merge: current wins for actioned records; archived fills in unread ones
+          const matchKey = r => (r['Serial No.'] || '').trim()
+            || ((r['#'] || '').trim() + '|' + (r['STREET'] || '').trim());
+          const isActioned = r => !!(r['READING'] || '').trim() || !!(r['SKIP'] || '').trim();
+
+          const archivedMap = new Map(d.rows.map(r => [matchKey(r), r]));
+          const currentMap = new Map(currentForBundle.map(r => [matchKey(r), r]));
+
+          let recovered = 0;
+
+          // Start with current records, filling in archived readings where current is unread
+          restoredRows = currentForBundle.map(cur => {
+            if (isActioned(cur)) return cur; // current wins
+            const arch = archivedMap.get(matchKey(cur));
+            if (arch && isActioned(arch)) {
+              recovered++;
+              return {
+                ...cur,
+                'READING': arch['READING'] || '',
+                'READ DATE': arch['READ DATE'] || '',
+                'SKIP': arch['SKIP'] || '',
+                'SKIP_OTHER': arch['SKIP_OTHER'] || '',
+                'COMMENTS': arch['COMMENTS'] || '',
+              };
+            }
+            return cur;
+          });
+
+          // Append archived records that don't exist in current copy
+          d.rows.forEach(arch => {
+            if (!currentMap.has(matchKey(arch))) {
+              restoredRows.push(arch);
+              if (isActioned(arch)) recovered++;
+            }
+          });
+
+          allRecords = allRecords.filter(r =>
+            ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') !== d.key
+          );
+          allRecords = [...allRecords, ...restoredRows];
+          bundles = groupIntoBundles(allRecords);
+          deletedBundles = deletedBundles.filter(x => x !== d);
+          saveDeletedBundles();
+          saveRecordsBackup();
+          renderHome();
+          updateRecoverBar();
+          recoverModal.classList.add('hidden');
+          showToast(recovered > 0
+            ? `Bundle "${d.bundleName}" merged — ${recovered} reading${recovered !== 1 ? 's' : ''} recovered`
+            : `Bundle "${d.bundleName}" merged — no new readings to recover`
+          );
+          return;
+        }
+
         allRecords = allRecords.filter(r =>
           ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') !== d.key
         );
-        allRecords = [...allRecords, ...d.rows];
+        allRecords = [...allRecords, ...restoredRows];
         bundles = groupIntoBundles(allRecords);
         deletedBundles = deletedBundles.filter(x => x !== d);
         saveDeletedBundles();
@@ -1602,10 +1662,7 @@
         renderHome();
         updateRecoverBar();
         recoverModal.classList.add('hidden');
-        showToast(alreadyLoaded
-          ? `Bundle "${d.bundleName}" overwritten with recovered file`
-          : `Bundle "${d.bundleName}" restored`
-        );
+        showToast(`Bundle "${d.bundleName}" restored`);
       });
       recoverList.appendChild(item);
     });
