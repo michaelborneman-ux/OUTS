@@ -1,2013 +1,1196 @@
 /* ================================================
-   Meter Reader PWA — App Logic
-   Home / Bundle Loading Page
+   Work Order Map PWA — app.js
    ================================================ */
 
-(function () {
-  'use strict';
+'use strict';
 
-  const APP_VERSION = 'v5.0';
+// ── Version ───────────────────────────────────
+const APP_VERSION = 'v2.5';
 
-  // ─── State ────────────────────────────────────────
-  let allRecords = [];         // all CSV rows
-  let bundles = [];            // grouped by bundle key
-  let sentBundles = new Set(); // bundle keys marked as sent (persisted)
-  let bundleRates = {};        // bundle key → { est3, est46, est7p } — persisted
-  let pendingRecordsForRates = null; // CSV records waiting for rate entry
-  let pendingEmailBundle = null; // bundle queued in email provider picker
-  let readerName = '';         // current reader name
-  let pendingBundle = null;    // bundle waiting for reader name
-  let currentBundle = null;    // bundle open in detail view
-  let currentRow = null;    // row open in card detail view
-  let cardReturnTarget = 'bundle'; // 'bundle' or 'map'
+// ── Google Sheets published CSV URL ───────────
+// Dispatcher: File → Share → Publish to web → CSV → paste the URL here
+const SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTmjcAZ6v2j5Lrs_XhyPovwduIdtVjfnQKr0bqOau-MSyW3nuePnfoHsFAU4-OJWxilBqxCL3DKe2AA/pub?gid=0&single=true&output=csv';
 
-  // Default rates by area code (used to pre-fill the rate modal)
-  const AREA_RATES = {
-    '21': { est3: 2.50, est46: 3.00, est7p: 5.50 },
-    '45': { est3: 3.00, est46: 4.00, est7p: 6.00 },
-    '47': { est3: 3.00, est46: 8.00, est7p: 8.00 },
+// ── Storage keys ──────────────────────────────
+const RECORDS_KEY = 'wo_records';
+const GEOCACHE_KEY = 'wo_geocache';
+const COMPLETIONS_KEY = 'wo_completions';
+const MAP_STYLE_KEY = 'wo_map_style';
+const ENGINEER_KEY = 'wo_engineer';
+const POINTS_KEY = 'wo_points';
+
+
+// ── State ─────────────────────────────────────
+let workOrders = [];       // parsed CSV rows
+let geocodedPoints = [];       // { lat, lng, row }
+let geocodeFailures = [];       // { row, query }
+let completions = {};       // { [workorder]: { date } }
+let mapInitialized = false;
+let leafletMap = null;
+let mapMarkers = [];
+let userLocationMarker = null;
+let gpsWatching = false;
+let gpsAutoStopTimer = null;
+let activeRow = null;     // row shown in detail sheet
+let sheetJustOpened = false;    // guard: prevents same tap from immediately closing the sheet
+let dueTodayActive = false;
+let selectedEngineer = '';
+let pendingRecords = null;
+let mapStyle = localStorage.getItem(MAP_STYLE_KEY) || 'auto';
+let darkMQ = null;
+
+// ── DOM refs ──────────────────────────────────
+const splash = document.getElementById('splash');
+const viewHome = document.getElementById('view-home');
+const viewMap = document.getElementById('view-map');
+const csvFileInput = document.getElementById('csv-file-input');
+const csvReloadInput = document.getElementById('csv-reload-input');
+const btnLoadNew = document.getElementById('btn-load-new');
+const woCountBadge = document.getElementById('wo-count-badge');
+const geocodeBar = document.getElementById('geocode-bar');
+const geocodeBarText = document.getElementById('geocode-bar-text');
+const geocodeBarFill = document.getElementById('geocode-bar-fill');
+const notFoundBanner = document.getElementById('not-found-banner');
+const notFoundText = document.getElementById('not-found-text');
+const btnFixAddresses = document.getElementById('btn-fix-addresses');
+const detailSheet = document.getElementById('detail-sheet');
+const detailClose = document.getElementById('detail-close');
+const detailNotifChip = document.getElementById('detail-notif-chip');
+const detailWoNum = document.getElementById('detail-wo-num');
+const detailAddress = document.getElementById('detail-address');
+const detailMis = document.getElementById('detail-mis');
+const detailCity = document.getElementById('detail-city');
+const detailLocRow = document.getElementById('detail-loc-row');
+const detailLoc = document.getElementById('detail-loc');
+const detailWorkType = document.getElementById('detail-work-type');
+const detailNotifCode = document.getElementById('detail-notif-code');
+const detailMeterNum = document.getElementById('detail-meter-num');
+const detailMeterSize = document.getElementById('detail-meter-size');
+const detailLastReadRow = document.getElementById('detail-last-read-row');
+const detailLastRead = document.getElementById('detail-last-read');
+const detailRefErt = document.getElementById('detail-ref-ert');
+const detailDatesRow = document.getElementById('detail-dates-row');
+const detailDates = document.getElementById('detail-dates');
+const detailNavLink = document.getElementById('detail-nav-link');
+const geocodeFixModal = document.getElementById('geocode-fix-modal');
+const geocodeFixList = document.getElementById('geocode-fix-list');
+const geocodeFixClose = document.getElementById('geocode-fix-close');
+const engineerFilterSel = document.getElementById('engineer-filter');
+const btnDueToday = document.getElementById('btn-due-today');
+const toast = document.getElementById('toast');
+const btnComplete = document.getElementById('btn-complete');
+const overdueWarning = document.getElementById('detail-overdue-warning');
+const overdueText = document.getElementById('detail-overdue-text');
+const overdueDismiss = document.getElementById('detail-overdue-dismiss');
+const statusBar = document.getElementById('status-bar');
+const btnMapStyle = document.getElementById('btn-map-style');
+const mapStyleMenu = document.getElementById('map-style-menu');
+const viewEngineer = document.getElementById('view-engineer');
+const engineerList = document.getElementById('engineer-list');
+const mergeModal = document.getElementById('merge-modal');
+const mergeModalDesc = document.getElementById('merge-modal-desc');
+const btnMergeKeep = document.getElementById('btn-merge-keep');
+const btnMergeFresh = document.getElementById('btn-merge-fresh');
+
+// ── Helpers ───────────────────────────────────
+function fmtDate(str) {
+  if (!str) return str;
+  try {
+    const d = new Date(str);
+    if (isNaN(d)) return str;
+    const mon = d.toLocaleDateString('en-CA', { month: 'short' });
+    const day = String(d.getDate()).padStart(2, '0');
+    const wday = d.toLocaleDateString('en-CA', { weekday: 'short' });
+    return `${mon} ${day} (${wday})`;
+  } catch (_) { return str; }
+}
+
+function esc(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+let toastTimer = null;
+function showToast(msg, isError = false) {
+  toast.textContent = msg;
+  toast.style.background = isError ? 'rgba(180,30,30,0.92)' : 'rgba(26,36,56,0.92)';
+  toast.classList.remove('hidden', 'fade-out');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.classList.add('hidden'), 400);
+  }, 2800);
+}
+
+// ── CSV Parsing ───────────────────────────────
+function parseCSV(text) {
+  const lines = [];
+  let cur = '', inQ = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') { inQ = !inQ; cur += ch; }
+    else if ((ch === '\n' || ch === '\r') && !inQ) {
+      if (cur.trim()) lines.push(cur);
+      cur = '';
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+    } else { cur += ch; }
+  }
+  if (cur.trim()) lines.push(cur);
+
+  const parseLine = (line) => {
+    const fields = []; let f = '', q = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (q && line[i + 1] === '"') { f += '"'; i++; }
+        else q = !q;
+      } else if (ch === ',' && !q) {
+        fields.push(f.trim());
+        f = '';
+      } else { f += ch; }
+    }
+    fields.push(f.trim());
+    return fields;
   };
 
-  // Map state
-  let mapInitialized = false;  // lazy init guard
-  let leafletMap = null;   // L.Map instance
-  let mapMarkers = [];     // array of { marker, row, bundle }
-  let geocodePending = false;  // prevents concurrent geocode runs
-  let geocodedPoints = [];     // cached results — reused on subsequent map opens
-  let geocodeFailures = [];     // records that could not be geocoded
-  let geocodeStale = false;  // set by forceGeocodeBundle — forces re-geocode on next map open
-  let userLocationMarker = null;  // L.marker for the user's GPS position
-  let gpsAutoStopTimer = null;
-  let gpsWatching = false;
-  const GPS_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-  let bdShowMissed = false;  // bundle list filter: unread cards
-  let bdShowSkipped = false;  // bundle list filter: skipped cards
-  let backupBarShown = false;  // session flag — show daily backup bar only once
-
-  // ─── DOM refs ─────────────────────────────────────
-  const viewSplash = document.getElementById('view-splash');
-  const viewHome = document.getElementById('view-home');
-  const viewBundle = document.getElementById('view-bundle');
-  const viewTotals = document.getElementById('view-totals');
-  const homeDate = document.getElementById('home-date');
-  const homeTime = document.getElementById('home-time');
-  const sumBundles = document.getElementById('sum-bundles');
-  const sumCards = document.getElementById('sum-cards');
-  const sumRead = document.getElementById('sum-read');
-  const sumSent = document.getElementById('sum-sent');
-  const homeSearch = document.getElementById('home-search');
-  const homeReaderName = document.getElementById('home-reader-name');
-  const uploadPrompt = document.getElementById('upload-prompt');
-  const bundleList = document.getElementById('bundle-list');
-  const csvFileInput = document.getElementById('csv-file-input');
-  const toast = document.getElementById('toast');
-
-  // Bundle detail
-  const bdDate = document.getElementById('bd-date');
-  const bdTime = document.getElementById('bd-time');
-  const bdRoutes = document.getElementById('bd-routes');
-  const bdTitle = document.getElementById('bd-title');
-  const bdArea = document.getElementById('bd-area');
-  const bdStatusBadge = document.getElementById('bd-status-badge');
-  const bdCountLabel = document.getElementById('bd-count-label');
-  const bdCountPct = document.getElementById('bd-count-pct');
-  const bdProgressFill = document.getElementById('bd-progress-fill');
-  const bdTotal = document.getElementById('bd-total');
-  const bdEst3r = document.getElementById('bd-est3r');
-  const bdEst3 = document.getElementById('bd-est3');
-  const bdEst46r = document.getElementById('bd-est46r');
-  const bdEst46 = document.getElementById('bd-est46');
-  const bdEst7pr = document.getElementById('bd-est7pr');
-  const bdEst7p = document.getElementById('bd-est7p');
-  const bdReaderName = document.getElementById('bd-reader-name');
-  const bdSearch = document.getElementById('bd-search');
-  const addressList = document.getElementById('address-list');
-  const bdFilterMissedBtn = document.getElementById('bd-filter-missed');
-  const bdFilterSkippedBtn = document.getElementById('bd-filter-skipped');
-  document.getElementById('bundle-back-btn').addEventListener('click', goHome);
-  document.getElementById('bd-back-nav').addEventListener('click', goHome);
-  document.getElementById('totals-back-btn').addEventListener('click', () => {
-    viewTotals.classList.add('hidden');
-    viewBundle.classList.remove('hidden');
+  const headers = parseLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseLine(line);
+    const obj = {};
+    headers.forEach((h, i) => {
+      obj[h.trim()] = (vals[i] || '').replace(/^"|"$/g, '').trim();
+    });
+    return obj;
   });
-  document.getElementById('totals-print-btn').addEventListener('click', () => window.print());
+}
 
-  // Card detail
-  const viewCard = document.getElementById('view-card');
-  const cardDtDate = document.getElementById('card-dt-date');
-  const cardDtTime = document.getElementById('card-dt-time');
-  const cardDtSeq = document.getElementById('card-dt-seq');
-  const cardDtAddress = document.getElementById('card-dt-address');
-  const cardDtCity = document.getElementById('card-dt-city');
-  const cardDtLocRow = document.getElementById('card-dt-loc-row');
-  const cardDtLoc = document.getElementById('card-dt-loc');
-  const cardDtMtrSize = document.getElementById('card-dt-mtr-size');
-  const cardDtSerial = document.getElementById('card-dt-serial');
-  const cardDtEst = document.getElementById('card-dt-est');
-  const cardDtSpecWrap = document.getElementById('card-dt-spec-wrap');
-  const cardDtSpec = document.getElementById('card-dt-spec');
-  const cardDtReading = document.getElementById('card-dt-reading');
-  const cardDtSkip = document.getElementById('card-dt-skip');
-  const cardDtSkipOther = document.getElementById('card-dt-skip-other');
-  const cardDtReadDate = document.getElementById('card-dt-read-date');
-  const cardDtComments = document.getElementById('card-dt-comments');
-  const cardDtSaveBtn = document.getElementById('card-dt-save-btn');
-  const cardNavPos = document.getElementById('card-nav-pos');
-  const cardPrevBtn = document.getElementById('card-prev-btn');
-  const cardNextBtn = document.getElementById('card-next-btn');
-  document.getElementById('card-back-btn').addEventListener('click', cardGoBack);
-  document.getElementById('card-back-nav').addEventListener('click', cardGoBack);
+// ── Google Sheets CSV fetch ────────────────────
+async function fetchCSVFromSheets() {
+  if (!SHEETS_CSV_URL || SHEETS_CSV_URL.startsWith('PASTE_')) {
+    console.log('[Sheets] URL not configured — skipping fetch');
+    return null;
+  }
+  console.log('[Sheets] Fetching:', SHEETS_CSV_URL);
+  try {
+    const res = await fetch(SHEETS_CSV_URL, { cache: 'no-store' });
+    console.log('[Sheets] Response status:', res.status, res.ok);
+    if (!res.ok) return null;
+    const text = await res.text();
+    console.log('[Sheets] CSV length:', text.length, '— first 200 chars:', text.slice(0, 200));
+    return text;
+  } catch (err) {
+    console.error('[Sheets] Fetch error:', err);
+    return null;
+  }
+}
 
-  // Map view DOM refs
-  const viewMap = document.getElementById('view-map');
-  const mapDate = document.getElementById('map-date');
-  const mapTime = document.getElementById('map-time');
-  const mapGeocodeBar = document.getElementById('map-geocode-bar');
-  const mapGeocodeLabel = document.getElementById('map-geocode-label');
-  const mapGeocodeFill = document.getElementById('map-geocode-fill');
-  const mapReaderName = document.getElementById('map-reader-name');
-  const homeNavMap = document.getElementById('home-nav-map');
-  const mapNavBundles = document.getElementById('map-nav-bundles');
-  const mapNotFoundBar = document.getElementById('map-notfound-bar');
-  const mapNotFoundLabel = document.getElementById('map-notfound-label');
-  const geocodeFixModal = document.getElementById('geocode-fix-modal');
-  const geocodeFixList = document.getElementById('geocode-fix-list');
-  const mapBundleFilter = document.getElementById('map-bundle-filter');
+// ── Completions persistence ───────────────────
+function loadCompletions() {
+  try { return JSON.parse(localStorage.getItem(COMPLETIONS_KEY) || '{}'); } catch (_) { return {}; }
+}
+function saveCompletions() {
+  try { localStorage.setItem(COMPLETIONS_KEY, JSON.stringify(completions)); } catch (_) { }
+}
 
-  // Rate modal
-  const rateModal = document.getElementById('rate-modal');
-  const rateEst3In = document.getElementById('rate-est3');
-  const rateEst46In = document.getElementById('rate-est46');
-  const rateEst7pIn = document.getElementById('rate-est7p');
-  function showRateModal(records) {
-    pendingRecordsForRates = records;
-    // Detect area from first record to pre-fill defaults
-    const firstMruRow = records.find(r => (r['MRU id'] || '').trim());
-    const mruArea = firstMruRow
-      ? String((firstMruRow['MRU id'] || '').trim()).padStart(6, '0').substring(2, 4)
-      : '';
-    // Prefer previously stored rates for a matching bundle key, then area defaults
-    const newKeys = getNewBundleKeys(records);
-    const stored = newKeys.map(k => bundleRates[k]).find(Boolean);
-    const defaults = stored || AREA_RATES[mruArea] || {};
-    rateEst3In.value = defaults.est3 != null ? defaults.est3 : '';
-    rateEst46In.value = defaults.est46 != null ? defaults.est46 : '';
-    rateEst7pIn.value = defaults.est7p != null ? defaults.est7p : '';
-    rateModal.classList.remove('hidden');
-    rateEst3In.focus();
+// ── Geocache ──────────────────────────────────
+function loadGeoCache() {
+  try { return JSON.parse(localStorage.getItem(GEOCACHE_KEY) || '{}'); } catch (_) { return {}; }
+}
+function saveGeoCache(cache) {
+  try { localStorage.setItem(GEOCACHE_KEY, JSON.stringify(cache)); } catch (_) { }
+}
+
+// ── Persisted geocoded points ─────────────────
+function savePoints() {
+  try { localStorage.setItem(POINTS_KEY, JSON.stringify(geocodedPoints)); } catch (_) { }
+}
+function loadPoints() {
+  try { return JSON.parse(localStorage.getItem(POINTS_KEY) || '[]'); } catch (_) { return []; }
+}
+
+// ── Address cleaning for geocoding ───────────
+// Strip the Mis Address portion (unit/suite info) from Street Address
+function cleanAddressForGeocode(streetAddress, misAddress) {
+  let addr = (streetAddress || '').trim();
+  if (misAddress) {
+    // Strip /U: prefix from Mis Address to get the unit identifier text
+    const unitText = misAddress.replace(/^\/U:/i, '').trim();
+    if (unitText) {
+      // Escape any regex special chars in the unit text before substituting
+      const escaped = unitText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      addr = addr.replace(new RegExp(escaped, 'gi'), '');
+    }
+  }
+  // Clean up leftover double-commas, extra spaces, trailing commas
+  return addr
+    .replace(/,\s*,/g, ',')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .replace(/[,\s]+$/, '');
+}
+
+// ── Single-address geocoder (Nominatim) ───────
+function geocodeAddress(streetAddress, misAddress, city, cache) {
+  const cleanAddr = cleanAddressForGeocode(streetAddress, misAddress);
+  const cacheKey = `${cleanAddr},${city}`.toLowerCase();
+
+  if (cache[cacheKey]) return Promise.resolve({ coords: cache[cacheKey], count: 0 });
+
+  const doFetch = (q) =>
+    fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=ca`,
+      { headers: { 'User-Agent': 'WorkOrderMapPWA/1.0' } }
+    )
+      .then(r => r.json())
+      .then(d => (d && d[0]) ? { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) } : null)
+      .catch(() => null);
+
+  // Attempt 1: cleanAddr + Ontario
+  return doFetch(`${cleanAddr}, Ontario`).then(coords => {
+    if (coords) {
+      cache[cacheKey] = coords;
+      saveGeoCache(cache);
+      return { coords, count: 1 };
+    }
+    // Attempt 2: cleanAddr + City + Ontario
+    return doFetch(`${cleanAddr}, ${city}, Ontario`).then(coords2 => {
+      if (coords2) { cache[cacheKey] = coords2; saveGeoCache(cache); }
+      return { coords: coords2, count: 2 };
+    });
+  });
+}
+
+// ── Batch geocoding with rate-limiting ────────
+function geocodeAllRecords(progressCb) {
+  const cache = loadGeoCache();
+  const tasks = workOrders.map(row => ({
+    row,
+    streetAddress: (row['Street Address'] || '').trim(),
+    misAddress: (row['Mis Address'] || '').trim(),
+    city: (row['City'] || '').trim(),
+  })).filter(t => t.streetAddress &&
+    (!selectedEngineer || (t.row['engineer'] || '').trim() === selectedEngineer));
+
+  const results = [], failures = [];
+  let done = 0;
+  const total = tasks.length;
+
+  function processNext(i) {
+    if (i >= total) return Promise.resolve({ points: results, failures });
+    const { row, streetAddress, misAddress, city } = tasks[i];
+    return geocodeAddress(streetAddress, misAddress, city, cache).then(({ coords, count }) => {
+      done++;
+      progressCb(done, total);
+      if (coords) results.push({ lat: coords.lat, lng: coords.lng, row });
+      else failures.push({
+        row, streetAddress, misAddress, city,
+        query: `${cleanAddressForGeocode(streetAddress, misAddress)}, Ontario`
+      });
+      const delay = count * 1050;
+      return new Promise(res => setTimeout(res, delay)).then(() => processNext(i + 1));
+    });
   }
 
-  document.getElementById('rate-modal-confirm').addEventListener('click', () => {
-    const rates = {
-      est3: parseFloat(rateEst3In.value) || 0,
-      est46: parseFloat(rateEst46In.value) || 0,
-      est7p: parseFloat(rateEst7pIn.value) || 0,
-    };
-    rateModal.classList.add('hidden');
-    commitLoad(pendingRecordsForRates, rates);
-    pendingRecordsForRates = null;
-  });
+  return processNext(0);
+}
 
-  document.getElementById('rate-modal-cancel').addEventListener('click', () => {
-    rateModal.classList.add('hidden');
-    pendingRecordsForRates = null;
-  });
+// ── Marker icons ──────────────────────────────
+const NOTIF_CODE = (row) => (row['Notification Code'] || '').trim().toUpperCase();
 
-  // Map tab navigation
-  homeNavMap.addEventListener('click', showMapView);
-  mapNavBundles.addEventListener('click', () => {
+function isRedLock(row) { return NOTIF_CODE(row) === 'RDLK'; }
+function isBlackLock(row) { return ['LKFS', 'TLOC', 'LOCK'].includes(NOTIF_CODE(row)); }
+function isOpenLock(row) { return NOTIF_CODE(row) === 'LKOO'; }
+function isBattery(row) { return NOTIF_CODE(row) === 'RMBE'; }
+function isTamper(row) { return NOTIF_CODE(row) === 'TC01'; }
+function isMove(row) { return NOTIF_CODE(row) === 'MOVE'; }
+function isSpecialRead(row) { return ['MT31', 'ESTS', 'CKRD'].includes(NOTIF_CODE(row)); }
+
+function getMarkerColor(row) {
+  if (isRedLock(row)) return '#ef4444';   // red lock
+  if (isBlackLock(row)) return '#1a1a1a';   // black lock
+  if (isOpenLock(row)) return '#4b5563';   // dark grey open lock
+  if (isBattery(row)) return '#f97316';   // orange battery
+  if (isTamper(row)) return '#0d9488';   // turquoise tamper
+  if (isSpecialRead(row)) return '#eab308';   // yellow special read
+  return '#3b82f6';                           // default blue
+}
+
+function makeCircleIcon(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+    <circle cx="11" cy="11" r="9" fill="${color}" stroke="#fff" stroke-width="2.5"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [22, 22], iconAnchor: [11, 11], popupAnchor: [0, -14] });
+}
+
+// RDLK must be done Mon–Thu; if targetfinish is Fri/Sat/Sun, shift back to that Thursday
+function effectiveLockDate(row) {
+  const tf = (row['targetfinish'] || '').trim();
+  if (!tf) return null;
+  try {
+    const d = new Date(tf);
+    d.setHours(0, 0, 0, 0);
+    const day = d.getDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
+    if (day === 5) d.setDate(d.getDate() - 1); // Fri → Thu
+    if (day === 6) d.setDate(d.getDate() - 2); // Sat → Thu
+    if (day === 0) d.setDate(d.getDate() - 3); // Sun → Thu (prev week)
+    return d;
+  } catch (_) { return null; }
+}
+
+function isLockEndToday(row) {
+  const effective = effectiveLockDate(row);
+  if (!effective) return false;
+  const today = new Date();
+  return effective.getFullYear() === today.getFullYear() &&
+    effective.getMonth() === today.getMonth() &&
+    effective.getDate() === today.getDate();
+}
+
+function isLockEndPast(row) {
+  const effective = effectiveLockDate(row);
+  if (!effective) return false;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return effective < today;
+}
+
+function isAptToday(row) {
+  const val = (row['aptstart'] || '').trim();
+  if (!val) return false;
+  try {
+    const d = new Date(val);
+    const today = new Date();
+    return d.getFullYear() === today.getFullYear() &&
+      d.getMonth() === today.getMonth() &&
+      d.getDate() === today.getDate();
+  } catch (_) { return false; }
+}
+
+function isDueToday(row) {
+  if (isRedLock(row)) return isLockEndToday(row);
+  if (isTamper(row)) return true;                    // TC01
+  if (isBlackLock(row)) return true;                    // LKFS, TLOC, LOCK
+  if (isSpecialRead(row)) return isAptToday(row);        // MT31, ESTS, CKRD — only if aptstart = today
+  return false;
+}
+
+// badge: null | 'star' | 'exclamation'
+function makeLockIcon(bgColor, keyColor, badge = null) {
+  let badgeSvg = '';
+  if (badge === 'star') {
+    badgeSvg = `<polygon points="20,2 20.88,4.29 23.33,4.42 21.43,5.96 22.06,8.33 20,7 17.94,8.33 18.57,5.96 16.67,4.42 19.12,4.29"
+         fill="#fbbf24" stroke="#fff" stroke-width="0.6"/>`;
+  } else if (badge === 'exclamation') {
+    badgeSvg = `<circle cx="21" cy="5" r="3.8" fill="#fff" stroke="#dc2626" stroke-width="1"/>
+      <text x="21" y="7.8" text-anchor="middle" font-size="6" font-weight="bold" fill="#dc2626">!</text>`;
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+    <circle cx="13" cy="13" r="11" fill="${bgColor}" stroke="#fff" stroke-width="2.5"/>
+    <rect x="9" y="12" width="8" height="6" rx="1.2" fill="#fff"/>
+    <path d="M10.5 12v-2a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="13" cy="15" r="1" fill="${keyColor}"/>
+    ${badgeSvg}
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -16] });
+}
+
+function makeOpenLockIcon() {
+  // Dark grey circle with an open padlock (shackle raised on right side)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+    <circle cx="13" cy="13" r="11" fill="#4b5563" stroke="#fff" stroke-width="2.5"/>
+    <rect x="9" y="13" width="8" height="6" rx="1.2" fill="#fff"/>
+    <path d="M10.5 13v-3a2.5 2.5 0 0 1 5 0" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+    <circle cx="13" cy="16" r="1" fill="#4b5563"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -16] });
+}
+
+function makeBatteryIcon() {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+    <circle cx="13" cy="13" r="11" fill="#f97316" stroke="#fff" stroke-width="2.5"/>
+    <rect x="7" y="10.5" width="10" height="5.5" rx="1.2" fill="none" stroke="#fff" stroke-width="1.5"/>
+    <rect x="17" y="12" width="2" height="2.5" rx="0.5" fill="#fff"/>
+    <line x1="9.5" y1="13.25" x2="11.5" y2="13.25" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -16] });
+}
+
+function makeTamperIcon() {
+  // Turquoise circle: closed lock body with a "!" exclamation — tamper alert
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+    <circle cx="13" cy="13" r="11" fill="#0d9488" stroke="#fff" stroke-width="2.5"/>
+    <rect x="9.5" y="12.5" width="7" height="5.5" rx="1.2" fill="#fff"/>
+    <path d="M11 12.5v-1.8a2 2 0 0 1 4 0v1.8" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="13" y1="14.2" x2="13" y2="16" stroke="#0d9488" stroke-width="1.4" stroke-linecap="round"/>
+    <circle cx="13" cy="17" r="0.6" fill="#0d9488"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -16] });
+}
+
+function makeMoveIcon() {
+  // Blue circle with a bold right-pointing arrow — represents relocation/move
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+    <circle cx="13" cy="13" r="11" fill="#3b82f6" stroke="#fff" stroke-width="2.5"/>
+    <line x1="7" y1="13" x2="17" y2="13" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+    <polyline points="13,9 17,13 13,17" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -16] });
+}
+
+function makeSpecialReadIcon() {
+  // Yellow circle with a checkmark — special/check read
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+    <circle cx="13" cy="13" r="11" fill="#eab308" stroke="#fff" stroke-width="2.5"/>
+    <polyline points="7.5,13.5 11,17 18.5,9" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -16] });
+}
+
+function makeBaseMarkerIcon(row) {
+  if (isRedLock(row)) {
+    const badge = isLockEndPast(row) ? 'exclamation' : isLockEndToday(row) ? 'star' : null;
+    return makeLockIcon('#ef4444', '#ef4444', badge);
+  }
+  if (isBlackLock(row)) return makeLockIcon('#1a1a1a', '#1a1a1a');
+  if (isOpenLock(row)) return makeOpenLockIcon();
+  if (isBattery(row)) return makeBatteryIcon();
+  if (isTamper(row)) return makeTamperIcon();
+  if (isMove(row)) return makeMoveIcon();
+  if (isSpecialRead(row)) return makeSpecialReadIcon();
+  return makeCircleIcon(getMarkerColor(row));
+}
+
+function makeMarkerIcon(row) {
+  if (completions[row['Workorder'] || '']) return makeCircleIcon('#d1d5db');
+  return makeBaseMarkerIcon(row);
+}
+
+function refreshMarkerIcon(workorder) {
+  const entry = mapMarkers.find(m => (m.row['Workorder'] || '') === workorder);
+  if (entry) entry.marker.setIcon(makeMarkerIcon(entry.row));
+}
+
+// ── Map initialisation ────────────────────────
+const TILES = {
+  light: {
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+  },
+  dark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>',
+  },
+  satellite: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '© <a href="https://www.esri.com/">Esri</a> © OpenStreetMap',
+  },
+  standard: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  },
+};
+
+let tileLayerRef = null;
+
+function applyTileTheme(style) {
+  if (!leafletMap) return;
+  mapStyle = style;
+  let cfg;
+  if (style === 'auto') {
+    cfg = (darkMQ && darkMQ.matches) ? TILES.dark : TILES.light;
+  } else {
+    cfg = TILES[style] || TILES.light;
+  }
+  if (tileLayerRef) leafletMap.removeLayer(tileLayerRef);
+  tileLayerRef = L.tileLayer(cfg.url, { attribution: cfg.attribution, maxZoom: 19 });
+  tileLayerRef.addTo(leafletMap);
+  tileLayerRef.bringToBack();
+}
+
+function initLeafletMap() {
+  if (mapInitialized) return;
+
+  leafletMap = L.map('map-container', { zoomControl: true });
+
+  darkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+  applyTileTheme(mapStyle);
+  darkMQ.addEventListener('change', () => { if (mapStyle === 'auto') applyTileTheme('auto'); });
+
+  // GPS locate button
+  const LocateControl = L.Control.extend({
+    options: { position: 'topright' },
+    onAdd() {
+      const btn = L.DomUtil.create('button', 'locate-btn leaflet-bar');
+      btn.title = 'Show my location';
+      btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="7" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>`;
+      L.DomEvent.on(btn, 'click', startLocating);
+      return btn;
+    },
+  });
+  new LocateControl().addTo(leafletMap);
+
+  leafletMap.on('locationfound', onLocationFound);
+  leafletMap.on('locationerror', () => showToast('Could not get your location', true));
+  leafletMap.on('move', resetGpsTimer);
+  leafletMap.on('zoom', resetGpsTimer);
+
+  mapInitialized = true;
+}
+
+// ── GPS tracking ──────────────────────────────
+const GPS_TIMEOUT_MS = 5 * 60 * 1000;
+
+function startLocating() {
+  if (!mapInitialized || !leafletMap) return;
+  if (!('geolocation' in navigator)) { showToast('Geolocation not supported', true); return; }
+  leafletMap.locate({ setView: false, watch: true });
+  gpsWatching = true;
+  resetGpsTimer();
+}
+
+function onLocationFound(e) {
+  if (userLocationMarker) {
+    userLocationMarker.setLatLng(e.latlng);
+  } else {
+    const icon = L.divIcon({
+      html: `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"
+        fill="#1e50a2" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="7" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>`,
+      className: '',
+      iconSize: [28, 28],
+      iconAnchor: [14, 28],
+      popupAnchor: [0, -30],
+    });
+    userLocationMarker = L.marker(e.latlng, { icon, zIndexOffset: 1000 })
+      .addTo(leafletMap)
+      .bindPopup('<strong>Your Location</strong>');
+    leafletMap.setView(e.latlng, 16);
+  }
+}
+
+function resetGpsTimer() {
+  if (!gpsWatching) return;
+  clearTimeout(gpsAutoStopTimer);
+  gpsAutoStopTimer = setTimeout(() => {
     if (leafletMap) leafletMap.stopLocate();
-    clearGpsTimer();
-    viewMap.classList.add('hidden');
-    viewHome.classList.remove('hidden');
-  });
-
-  mapBundleFilter.addEventListener('change', applyBundleFilter);
-
-  document.getElementById('map-geocode-btn').addEventListener('click', () => {
-    const key = mapBundleFilter.value;
-    const cache = loadGeoCache();
-    const targets = key ? bundles.filter(b => b.key === key) : bundles;
-    targets.forEach(bundle => {
-      bundle.rows.forEach(r => {
-        const num = (r['#'] || '').trim();
-        const street = (r['STREET'] || '').trim();
-        const city = (r['City'] || '').trim();
-        if (!street || !city) return;
-        const { cleanNum, cleanStreet } = stripUnitInfo(num, street);
-        const cacheKey = `${cleanNum} ${cleanStreet},${city}`.trim().toLowerCase();
-        delete cache[cacheKey];
-      });
-    });
-    saveGeoCache(cache);
-    if (key) {
-      geocodedPoints = geocodedPoints.filter(p => p.bundle.key !== key);
-      geocodeFailures = geocodeFailures.filter(f => f.bundle.key !== key);
-    } else {
-      geocodedPoints = [];
-      geocodeFailures = [];
-    }
-    geocodeStale = true;
-    showMapView();
-  });
-
-  // Not-found bar + fix modal
-  document.getElementById('map-notfound-btn').addEventListener('click', showGeocodeFix);
-  document.getElementById('geocode-fix-close').addEventListener('click', () => {
-    geocodeFixModal.classList.add('hidden');
-  });
-
-  cardDtReading.addEventListener('input', () => {
-    const cleaned = cardDtReading.value.replace(/\D/g, '');
-    if (cleaned !== cardDtReading.value) cardDtReading.value = cleaned;
-  });
-
-  cardDtSkip.addEventListener('change', () => {
-    cardDtSkipOther.classList.toggle('hidden', cardDtSkip.value !== 'Other');
-    if (cardDtSkip.value === 'Other') setTimeout(() => cardDtSkipOther.focus(), 30);
-  });
-
-  // Reader name modal
-  const readerModal = document.getElementById('reader-name-modal');
-  const readerInput = document.getElementById('reader-name-input');
-  const readerConfirm = document.getElementById('reader-name-confirm');
-  const readerCancel = document.getElementById('reader-name-cancel');
-
-  // ─── Clock / Date ─────────────────────────────────
-  function updateClock() {
-    const now = new Date();
-    const t = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-    const d = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    homeTime.textContent = t;
-    homeDate.textContent = d;
-    bdTime.textContent = t;
-    bdDate.textContent = d;
-    cardDtTime.textContent = t;
-    cardDtDate.textContent = d;
-    mapTime.textContent = t;
-    mapDate.textContent = d;
-  }
-  updateClock();
-  setInterval(updateClock, 10000);
-
-  // ─── Persistence ──────────────────────────────────
-  const SENT_KEY = 'mtr_sent_bundles';
-  const READER_KEY = 'mtr_reader_name';
-  const RECORDS_KEY = 'mtr_records_backup';
-  const DELETED_KEY = 'mtr_deleted_bundles';
-  const GEOCACHE_KEY = 'mtr_geocache';
-  const RATES_KEY = 'mtr_bundle_rates';
-  const BACKUP_DATE_KEY = 'mtr_last_backup_date';
-  const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
-
-  let deletedBundles = [];  // [{ key, bundleName, rows, deletedAt }]
-
-  function loadSentState() {
-    try {
-      const raw = localStorage.getItem(SENT_KEY);
-      if (raw) sentBundles = new Set(JSON.parse(raw));
-    } catch (_) { }
-  }
-
-  function saveSentState() {
-    try {
-      localStorage.setItem(SENT_KEY, JSON.stringify([...sentBundles]));
-    } catch (_) { }
-  }
-
-  function saveDeletedBundles() {
-    try {
-      localStorage.setItem(DELETED_KEY, JSON.stringify(deletedBundles));
-    } catch (_) { }
-  }
-
-  function loadDeletedBundles() {
-    try {
-      const raw = localStorage.getItem(DELETED_KEY);
-      if (!raw) return;
-      const all = JSON.parse(raw);
-      const cutoff = Date.now() - TWO_WEEKS;
-      deletedBundles = all.filter(d => d.deletedAt >= cutoff);
-      // Prune expired entries from storage
-      if (deletedBundles.length !== all.length) saveDeletedBundles();
-    } catch (_) { }
-  }
-
-  function saveRecordsBackup() {
-    try {
-      localStorage.setItem(RECORDS_KEY, JSON.stringify(allRecords));
-    } catch (_) { }
-  }
-
-  function loadRecordsBackup() {
-    try {
-      const raw = localStorage.getItem(RECORDS_KEY);
-      if (!raw) return false;
-      const saved = JSON.parse(raw);
-      if (!Array.isArray(saved) || !saved.length) return false;
-      allRecords = saved;
-      bundles = groupIntoBundles(allRecords);
-      return true;
-    } catch (_) { return false; }
-  }
-
-  // ─── Geocoding ────────────────────────────────────
-  function loadGeoCache() {
-    try { return JSON.parse(localStorage.getItem(GEOCACHE_KEY) || '{}'); } catch (_) { return {}; }
-  }
-
-  function saveGeoCache(cache) {
-    try { localStorage.setItem(GEOCACHE_KEY, JSON.stringify(cache)); } catch (_) { }
-  }
-
-  function loadBundleRates() {
-    try { return JSON.parse(localStorage.getItem(RATES_KEY) || '{}'); } catch (_) { return {}; }
-  }
-
-  function saveBundleRates() {
-    try { localStorage.setItem(RATES_KEY, JSON.stringify(bundleRates)); } catch (_) { }
-  }
-
-  // Strips suite/unit/lot qualifiers from a civic number and street name
-  // so geocoders can find the base address without being confused by unit info.
-  function stripUnitInfo(num, street) {
-    // Remove unit/suite/lot/apt suffixes from the house number.
-    // Handles: "123-4", "123 UNIT 4", "123 APT B", "123 SUITE 200", "LOT 5"
-    const cleanNum = num
-      .replace(/\s*(unit|apt|apartment|suite|ste|lot|rm|room)\s*\S*/gi, '')
-      .replace(/-\w+$/, '')   // strip trailing dash-unit e.g. "123-4A"
-      .trim();
-
-    // Remove unit/suite/lot qualifiers from the street name.
-    // Handles: "MAIN ST SUITE 200", "OAK AVE, APT 3", "ELM RD LOT B"
-    const cleanStreet = street
-      .replace(/[,\s]*(unit|apt|apartment|suite|ste|lot|rm|room)\s*\S*/gi, '')
-      .trim();
-
-    return { cleanNum, cleanStreet };
-  }
-
-  // Returns Promise<{coords, count}>.
-  // coords = {lat,lng} or null. count = number of real HTTP requests made.
-  // Tries full address first; falls back to street+city if that fails.
-  function geocodeAddress(num, street, city, cache) {
-    const { cleanNum, cleanStreet } = stripUnitInfo(num, street);
-    const key = `${cleanNum} ${cleanStreet},${city}`.trim().toLowerCase();
-    if (cache[key]) return Promise.resolve({ coords: cache[key], count: 0 });
-
-    const doFetch = (q) =>
-      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=ca`,
-        { headers: { 'User-Agent': 'MeterReaderPWA/1.0' } })
-        .then(r => r.json())
-        .then(d => (d && d[0]) ? { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) } : null)
-        .catch(() => null);
-
-    return doFetch(`${cleanNum} ${cleanStreet}, ${city}, Ontario`).then(coords => {
-      if (coords) {
-        cache[key] = coords;
-        saveGeoCache(cache);
-        return { coords, count: 1 };
-      }
-      // Fallback: street + city only (no house number)
-      return doFetch(`${cleanStreet}, ${city}, Ontario`).then(coords2 => {
-        if (coords2) { cache[key] = coords2; saveGeoCache(cache); }
-        return { coords: coords2, count: 2 };
-      });
-    });
-  }
-
-  // Rate-limited geocode of all records (1 req/sec per Nominatim policy).
-  // Calls progressCb(done, total) after each attempt.
-  function geocodeAllRecords(progressCb) {
-    const cache = loadGeoCache();
-    const tasks = [];
-    bundles.forEach(bundle => {
-      bundle.rows.forEach(row => {
-        const num = (row['#'] || '').trim();
-        const street = (row['STREET'] || '').trim();
-        const city = (row['City'] || '').trim();
-        if (!street || !city) return;
-        tasks.push({ row, bundle, num, street, city });
-      });
-    });
-    const results = [];
-    const failures = [];
-    let doneCount = 0;
-    const total = tasks.length;
-
-    function processNext(i) {
-      if (i >= total) return Promise.resolve({ points: results, failures });
-      const { row, bundle, num, street, city } = tasks[i];
-      return geocodeAddress(num, street, city, cache).then(({ coords, count }) => {
-        doneCount++;
-        progressCb(doneCount, total);
-        if (coords) results.push({ lat: coords.lat, lng: coords.lng, row, bundle });
-        else failures.push({ row, bundle, num, street, city });
-        // Wait 1050ms per real HTTP request made (0 for cache hits)
-        const delay = count * 1050;
-        return new Promise(res => setTimeout(res, delay)).then(() => processNext(i + 1));
-      });
-    }
-    return processNext(0);
-  }
-
-  // ─── Map View ─────────────────────────────────────
-  function getMarkerColor(row) {
-    const reading = (row['READING'] || '').trim();
-    const skip = (row['SKIP'] || '').trim();
-    if (skip) return '#f59e0b';  // amber — skipped
-    if (reading) return '#22c55e';  // green — read
-    return '#3b82f6';               // blue — unread
-  }
-
-  function makeCircleIcon(color) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">` +
-      `<circle cx="10" cy="10" r="8" fill="${color}" stroke="#fff" stroke-width="2"/></svg>`;
-    return L.divIcon({ html: svg, className: '', iconSize: [20, 20], iconAnchor: [10, 10], popupAnchor: [0, -12] });
-  }
-
-  function initLeafletMap() {
-    if (mapInitialized) return;
-    if (typeof L === 'undefined') {
-      showToast('Map failed to load — check your internet connection and reload the page.', true);
-      return;
-    }
-    leafletMap = L.map('map-container', { zoomControl: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 19
-    }).addTo(leafletMap);
-
-    // Custom "Locate Me" control — top-right, below zoom buttons
-    const LocateControl = L.Control.extend({
-      options: { position: 'topright' },
-      onAdd() {
-        const btn = L.DomUtil.create('button', 'locate-btn leaflet-bar');
-        btn.title = 'Show my location';
-        btn.setAttribute('aria-label', 'Show my location');
-        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
-            viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
-        </svg>`;
-        L.DomEvent.on(btn, 'click', L.DomEvent.stopPropagation);
-        L.DomEvent.on(btn, 'click', L.DomEvent.preventDefault);
-        L.DomEvent.on(btn, 'click', startLocating);
-        return btn;
-      }
-    });
-    new LocateControl().addTo(leafletMap);
-    leafletMap.on('locationfound', onLocationFound);
-    leafletMap.on('locationerror', onLocationError);
-    leafletMap.on('move', resetGpsTimer);
-    leafletMap.on('zoom', resetGpsTimer);
-    leafletMap.on('click', resetGpsTimer);
-
-    mapInitialized = true;
-  }
-
-  function resetGpsTimer() {
-    if (!gpsWatching) return;
-    clearTimeout(gpsAutoStopTimer);
-    gpsAutoStopTimer = setTimeout(() => {
-      if (leafletMap) leafletMap.stopLocate();
-      gpsWatching = false;
-      showToast('GPS stopped after 5 minutes of inactivity.');
-    }, GPS_TIMEOUT_MS);
-  }
-
-  function clearGpsTimer() {
-    clearTimeout(gpsAutoStopTimer);
-    gpsAutoStopTimer = null;
     gpsWatching = false;
-  }
+    showToast('GPS stopped after 5 minutes of inactivity.');
+  }, GPS_TIMEOUT_MS);
+}
 
-  function startLocating() {
-    if (!mapInitialized || !leafletMap) return;
-    if (!('geolocation' in navigator)) {
-      showToast('Geolocation is not supported by this browser.', true);
-      return;
-    }
-    leafletMap.locate({ setView: false, watch: true });
-    gpsWatching = true;
-    resetGpsTimer();
-  }
+// ── Place markers ─────────────────────────────
+function clearMapMarkers() {
+  mapMarkers.forEach(({ marker }) => marker.remove());
+  mapMarkers = [];
+}
 
-  function onLocationFound(e) {
-    if (userLocationMarker) {
-      userLocationMarker.setLatLng(e.latlng);
-    } else {
-      const icon = L.divIcon({
-        html: `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"
-            fill="#f97316" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-            class="user-location-person">
-          <circle cx="12" cy="7" r="4"/>
-          <path d="M4 21v-1a8 8 0 0 1 16 0v1"/>
-        </svg>`,
-        className: '',
-        iconSize: [28, 28],
-        iconAnchor: [14, 28],
-        popupAnchor: [0, -30]
-      });
-      userLocationMarker = L.marker(e.latlng, { icon, zIndexOffset: 1000 })
-        .addTo(leafletMap)
-        .bindPopup('<strong>Your Location</strong>');
-      leafletMap.setView(e.latlng, 17);
-    }
-  }
+function placeMarkers(points, zoomToFit = true) {
+  if (!mapInitialized) return;
+  clearMapMarkers();
+  const bounds = [];
 
-  function onLocationError(e) {
-    const msg = e.code === 1
-      ? 'Location access denied — check your browser permissions.'
-      : 'Location unavailable — GPS signal lost or timed out.';
-    showToast(msg, true);
-  }
+  points.forEach(({ lat, lng, row }) => {
+    const icon = makeMarkerIcon(row);
+    const addr = (row['Street Address'] || '').trim();
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-  function clearMapMarkers() {
-    mapMarkers.forEach(({ marker }) => marker.remove());
-    mapMarkers = [];
-  }
+    const popup = `<strong>${esc(addr)}</strong>
+      <br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">↪ Navigate</a>`;
 
-  function updateMapMarkerForRow(row) {
-    const entry = mapMarkers.find(m => m.row === row);
-    if (entry) entry.marker.setIcon(makeCircleIcon(getMarkerColor(row)));
-  }
-
-  // Single tap → briefly show popup. Double tap → open data entry.
-  function attachMarkerTapHandlers(marker, row, bundle) {
-    let tapTimer = null;
-    marker.on('click', () => {
-      if (tapTimer) {
-        clearTimeout(tapTimer);
-        tapTimer = null;
-        marker.closePopup();
-        viewMap.classList.add('hidden');
-        showBundleDetail(bundle);
-        showCardDetail(row, bundle, 'map');
-      } else {
-        marker.openPopup();
-        tapTimer = setTimeout(() => { tapTimer = null; }, 300);
-        setTimeout(() => marker.closePopup(), 2500);
-      }
-    });
-    // Prevent double-tap from zooming the map
-    marker.on('dblclick', (e) => { L.DomEvent.stopPropagation(e); });
-  }
-
-  function placeMarkers(points) {
-    if (!mapInitialized) return;
-    clearMapMarkers();
-    const bounds = [];
-    points.forEach(({ lat, lng, row, bundle }) => {
-      const icon = makeCircleIcon(getMarkerColor(row));
-      const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
-      const loc = (row['LOC'] || '').trim();
-      const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-      const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a>`;
-      const marker = L.marker([lat, lng], { icon })
-        .addTo(leafletMap)
-        .bindPopup(popup, { autoClose: false, closeOnClick: false });
-      attachMarkerTapHandlers(marker, row, bundle);
-      mapMarkers.push({ marker, row, bundle });
-      bounds.push([lat, lng]);
-    });
-    populateBundleFilter();
-    applyBundleFilter();
-  }
-
-  function showMapView() {
-    if (!allRecords.length) {
-      showToast('Load a CSV file first to use the map.', true);
-      return;
-    }
-    viewHome.classList.add('hidden');
-    viewMap.classList.remove('hidden');
-    mapReaderName.textContent = readerName || 'Field Reader';
-
-    initLeafletMap();
-    if (!mapInitialized) return;  // Leaflet failed to load — bail out
-
-    // Double-rAF: ensures Leaflet measures container after layout is complete
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (leafletMap) leafletMap.invalidateSize();
-      });
-    });
-
-    // Already geocoded and not stale — just refresh marker colors and return
-    if ((geocodedPoints.length || geocodeFailures.length) && !geocodeStale) {
-      placeMarkers(geocodedPoints);
-      updateNotFoundBar();
-      populateBundleFilter();
-      return;
-    }
-
-    if (geocodePending) return;  // geocode in progress — wait for it
-
-    geocodeStale = false;
-    geocodePending = true;
-    mapGeocodeBar.classList.remove('hidden');
-    mapGeocodeFill.style.width = '0%';
-    mapGeocodeLabel.textContent = 'Geocoding addresses…';
-
-    geocodeAllRecords((done, total) => {
-      const pct = total > 0 ? Math.round((done / total) * 100) : 100;
-      mapGeocodeFill.style.width = `${pct}%`;
-      mapGeocodeLabel.textContent = `Geocoding… ${done} / ${total}`;
-    }).then(({ points, failures }) => {
-      geocodePending = false;
-      geocodedPoints = points;
-      geocodeFailures = failures;
-      mapGeocodeBar.classList.add('hidden');
-      placeMarkers(points);
-      updateNotFoundBar();
-      if (!points.length) showToast('No addresses could be geocoded.', true);
-      else showToast(`${points.length} mapped${failures.length ? `, ${failures.length} not found` : ''}`);
-    }).catch(() => {
-      geocodePending = false;
-      mapGeocodeBar.classList.add('hidden');
-      showToast('Geocoding failed — check your connection and try again.', true);
-    });
-  }
-
-  function updateNotFoundBar() {
-    if (geocodeFailures.length) {
-      mapNotFoundBar.classList.remove('hidden');
-      mapNotFoundLabel.textContent =
-        `${geocodeFailures.length} address${geocodeFailures.length !== 1 ? 'es' : ''} not found`;
-    } else {
-      mapNotFoundBar.classList.add('hidden');
-    }
-  }
-
-  // ─── Bundle Filter & Force Geocode ───────────────
-  function populateBundleFilter() {
-    const prev = mapBundleFilter.value;
-    mapBundleFilter.innerHTML = '<option value="">All Bundles</option>';
-    bundles.forEach(b => {
-      const opt = document.createElement('option');
-      opt.value = b.key;
-      opt.textContent = b.bundleName;
-      mapBundleFilter.appendChild(opt);
-    });
-    if (prev && bundles.some(b => b.key === prev)) mapBundleFilter.value = prev;
-  }
-
-  function applyBundleFilter() {
-    const key = mapBundleFilter.value;
-    const visibleLatLngs = [];
-    mapMarkers.forEach(({ marker, bundle }) => {
-      if (!key || bundle.key === key) {
-        if (!leafletMap.hasLayer(marker)) marker.addTo(leafletMap);
-        visibleLatLngs.push(marker.getLatLng());
-      } else {
-        if (leafletMap.hasLayer(marker)) marker.remove();
-      }
-    });
-    if (visibleLatLngs.length) {
-      leafletMap.fitBounds(visibleLatLngs.map(c => [c.lat, c.lng]), { padding: [32, 32] });
-    }
-  }
-
-
-  function addSingleMarker(coords, row, bundle) {
-    const icon = makeCircleIcon(getMarkerColor(row));
-    const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
-    const loc = (row['LOC'] || '').trim();
-    const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}`;
-    const marker = L.marker([coords.lat, coords.lng], { icon })
+    const marker = L.marker([lat, lng], { icon })
       .addTo(leafletMap)
       .bindPopup(popup, { autoClose: false, closeOnClick: false });
-    attachMarkerTapHandlers(marker, row, bundle);
-    mapMarkers.push({ marker, row, bundle });
+
+    marker.on('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (e.originalEvent) e.originalEvent.stopPropagation();
+      marker.closePopup();
+      openDetailSheet(row, lat, lng);
+    });
+
+    mapMarkers.push({ marker, row });
+    bounds.push([lat, lng]);
+  });
+
+  if (bounds.length && zoomToFit) {
+    leafletMap.invalidateSize();
+    leafletMap.fitBounds(bounds, { padding: [48, 48] });
+  }
+}
+
+// ── Add a single marker (from geocode fix) ────
+function addSingleMarker(coords, row) {
+  const icon = makeMarkerIcon(row);
+  const addr = (row['Street Address'] || '').trim();
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}`;
+  const popup = `<strong>${esc(addr)}</strong>
+    <br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">↪ Navigate</a>`;
+
+  const marker = L.marker([coords.lat, coords.lng], { icon })
+    .addTo(leafletMap)
+    .bindPopup(popup, { autoClose: false, closeOnClick: false });
+
+  marker.on('click', (e) => {
+    L.DomEvent.stopPropagation(e);
+    if (e.originalEvent) e.originalEvent.stopPropagation();
+    marker.closePopup();
+    openDetailSheet(row, coords.lat, coords.lng);
+  });
+
+  mapMarkers.push({ marker, row });
+}
+
+// ── Not-found banner ──────────────────────────
+function updateNotFoundBar() {
+  const n = geocodeFailures.length;
+  if (n === 0) {
+    notFoundBanner.classList.add('hidden');
+  } else {
+    notFoundText.textContent = `${n} address${n > 1 ? 'es' : ''} not found`;
+    notFoundBanner.classList.remove('hidden');
+  }
+}
+
+// ── Chip class for notification type ──────────
+function chipClass(type) {
+  const t = (type || '').toUpperCase();
+  if (t === 'ZB') return 'chip-zb';
+  if (t === 'YD') return 'chip-yd';
+  if (t === 'YE') return 'chip-ye';
+  return 'chip-default';
+}
+
+// ── Detail sheet ──────────────────────────────
+function openDetailSheet(row, lat, lng) {
+  sheetJustOpened = true;
+  clearTimeout(openDetailSheet._guard);
+  openDetailSheet._guard = setTimeout(() => { sheetJustOpened = false; }, 600);
+  activeRow = row;
+
+  const notifType = (row['Notification Type'] || '').trim();
+  detailNotifChip.textContent = notifType || '—';
+  detailNotifChip.className = `notif-chip ${chipClass(notifType)}`;
+  detailWoNum.textContent = `WO# ${row['Workorder'] || '—'}`;
+
+  detailAddress.textContent = (row['Street Address'] || '').trim() || '—';
+
+  const mis = (row['Mis Address'] || '').trim();
+  if (mis) {
+    detailMis.textContent = mis;
+    detailMis.classList.remove('hidden');
+  } else {
+    detailMis.classList.add('hidden');
   }
 
-  function showGeocodeFix() {
-    geocodeFixList.innerHTML = '';
-    geocodeFailures.forEach(f => {
-      const defaultQ = `${f.num ? f.num + ' ' : ''}${f.street}, ${f.city}, Ontario`;
-      const item = document.createElement('div');
-      item.className = 'geocode-fix-item';
-      item.innerHTML = `
-        <div class="geocode-fix-addr">${esc((f.num ? f.num + ' ' : '') + f.street)}, ${esc(f.city)}</div>
-        <div class="geocode-fix-row">
-          <input type="text" class="geocode-fix-input" value="${esc(defaultQ)}">
-          <button class="geocode-fix-btn">Retry</button>
-        </div>
-        <div class="geocode-fix-status"></div>
-      `;
-      const input = item.querySelector('.geocode-fix-input');
-      const btn = item.querySelector('.geocode-fix-btn');
-      const status = item.querySelector('.geocode-fix-status');
+  detailCity.textContent = (row['City'] || '').trim();
 
-      btn.addEventListener('click', () => {
-        const q = input.value.trim();
-        if (!q) return;
-        btn.disabled = true;
-        btn.textContent = '…';
-        status.textContent = '';
-        status.className = 'geocode-fix-status';
+  const loc = (row['Device Location Note'] || '').trim();
+  if (loc) {
+    detailLoc.textContent = loc;
+    detailLocRow.classList.remove('hidden');
+  } else {
+    detailLocRow.classList.add('hidden');
+  }
 
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=ca`;
-        fetch(url, { headers: { 'User-Agent': 'MeterReaderPWA/1.0' } })
-          .then(r => r.json())
-          .then(data => {
-            if (!data || !data[0]) {
-              status.textContent = 'Not found — try a different query';
-              status.className = 'geocode-fix-status geocode-fix-fail';
-              btn.disabled = false;
-              btn.textContent = 'Retry';
-              return;
-            }
-            const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-            // Cache under the original key
-            const cache = loadGeoCache();
-            const key = `${f.num} ${f.street},${f.city}`.trim().toLowerCase();
-            cache[key] = coords;
-            saveGeoCache(cache);
-            // Add to geocodedPoints + place marker
-            geocodedPoints.push({ lat: coords.lat, lng: coords.lng, row: f.row, bundle: f.bundle });
-            geocodeFailures = geocodeFailures.filter(x => x !== f);
-            addSingleMarker(coords, f.row, f.bundle);
-            updateNotFoundBar();
-            // Mark item as resolved
-            status.textContent = 'Found!';
-            status.className = 'geocode-fix-status geocode-fix-ok';
-            btn.textContent = '✓';
-            input.disabled = true;
-          })
-          .catch(() => {
-            status.textContent = 'Network error — try again';
+  detailWorkType.textContent = (row['Meter Location'] || '').trim() || '—';
+  detailNotifCode.textContent = (row['Notification Code'] || '').trim() || '—';
+  detailMeterNum.textContent = (row['Meter Number'] || '').trim() || '—';
+  detailMeterSize.textContent = (row['Meter Size'] || '').trim() || '—';
+
+  const grid = (row['Grid'] || '').trim();
+  const refErt = (row['Reference ERT'] || '').trim();
+  detailLastRead.textContent = grid || '—';
+  detailRefErt.textContent = refErt || '—';
+  if (grid || refErt) {
+    detailLastReadRow.classList.remove('hidden');
+  } else {
+    detailLastReadRow.classList.add('hidden');
+  }
+
+  const ts = (row['targetstart'] || '').trim();
+  const tf = (row['targetfinish'] || '').trim();
+  if (ts || tf) {
+    detailDates.textContent = ts && tf ? `${fmtDate(ts)} → ${fmtDate(tf)}` : fmtDate(ts || tf);
+    detailDatesRow.classList.remove('hidden');
+  } else {
+    detailDatesRow.classList.add('hidden');
+  }
+
+  detailNavLink.href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+
+  // Set complete button state
+  const wo = (row['Workorder'] || '').trim();
+  if (completions[wo]) {
+    btnComplete.classList.add('done');
+    btnComplete.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/></svg> Completed`;
+  } else {
+    btnComplete.classList.remove('done');
+    btnComplete.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/></svg> Complete`;
+  }
+
+  if (isRedLock(row) && isLockEndPast(row)) {
+    const tf = (row['targetfinish'] || '').trim();
+    overdueText.textContent = `⚠ Lock end date has passed (${tf})`;
+    overdueWarning.classList.remove('hidden');
+  } else {
+    overdueWarning.classList.add('hidden');
+  }
+
+  detailSheet.classList.remove('hidden');
+  requestAnimationFrame(() => detailSheet.classList.add('open'));
+}
+
+function closeDetailSheet() {
+  detailSheet.classList.remove('open');
+  setTimeout(() => detailSheet.classList.add('hidden'), 310);
+  activeRow = null;
+}
+
+// ── Geocode fix modal ─────────────────────────
+function showGeocodeFix() {
+  geocodeFixList.innerHTML = '';
+  const cache = loadGeoCache();
+
+  geocodeFailures.forEach((f, idx) => {
+    const item = document.createElement('div');
+    item.className = 'geocode-fix-item';
+    item.innerHTML = `
+      <div class="geocode-fix-addr">${esc((f.row['Street Address'] || '').trim())}, ${esc((f.row['City'] || '').trim())}</div>
+      <div class="geocode-fix-row">
+        <input type="text" class="geocode-fix-input" value="${esc(f.query)}" />
+        <button class="geocode-fix-btn">Retry</button>
+      </div>
+      <div class="geocode-fix-status"></div>
+    `;
+
+    const input = item.querySelector('.geocode-fix-input');
+    const btn = item.querySelector('.geocode-fix-btn');
+    const status = item.querySelector('.geocode-fix-status');
+
+    btn.addEventListener('click', () => {
+      const q = input.value.trim();
+      if (!q) return;
+      btn.disabled = true;
+      btn.textContent = '…';
+      status.textContent = '';
+
+      fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=ca`,
+        { headers: { 'User-Agent': 'WorkOrderMapPWA/1.0' } }
+      )
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data[0]) {
+            status.textContent = 'Not found — try a different query';
             status.className = 'geocode-fix-status geocode-fix-fail';
             btn.disabled = false;
             btn.textContent = 'Retry';
-          });
-      });
-
-      geocodeFixList.appendChild(item);
-    });
-    geocodeFixModal.classList.remove('hidden');
-  }
-
-  // ─── CSV Parser ───────────────────────────────────
-  function parseCSV(text) {
-    const lines = [];
-    let cur = '', inQ = false;
-    for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      if (ch === '"') { inQ = !inQ; cur += ch; }
-      else if ((ch === '\n' || ch === '\r') && !inQ) {
-        if (cur.trim()) lines.push(cur);
-        cur = '';
-        if (ch === '\r' && text[i + 1] === '\n') i++;
-      } else { cur += ch; }
-    }
-    if (cur.trim()) lines.push(cur);
-    if (lines.length === 0) return [];
-
-    const parseLine = (line) => {
-      const fields = []; let f = '', q = false;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (ch === '"') {
-          if (q && line[i + 1] === '"') { f += '"'; i++; } else q = !q;
-        } else if (ch === ',' && !q) {
-          fields.push(f.trim());
-          f = '';
-        } else {
-          f += ch;
-        }
-      }
-      fields.push(f.trim());
-      return fields;
-    };
-
-    const headers = parseLine(lines[0]);
-    return lines.slice(1).map(line => {
-      const vals = parseLine(line);
-      const obj = {};
-      headers.forEach((h, i) => {
-        obj[h.trim()] = (vals[i] || '').replace(/^"|"$/g, '').trim();
-      });
-      return obj;
-    });
-  }
-
-  // ─── Bundle Grouping ──────────────────────────────
-  // Groups by Bundle column if present, otherwise by City.
-  function groupIntoBundles(records) {
-    if (!records.length) return [];
-
-    // Check if a non-empty Bundle column exists
-    const hasBundle = records.some(r => (r['Bundle'] || '').trim() !== '');
-    const getKey = (r) => hasBundle
-      ? ((r['Bundle'] || '').trim() || (r['City'] || '').trim() || 'Unknown')
-      : ((r['City'] || '').trim() || 'Unknown');
-
-    const map = new Map();
-    records.forEach(r => {
-      const key = getKey(r);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(r);
-    });
-
-    return Array.from(map.entries()).map(([key, rows]) => {
-      const city = rows[0]['City'] || '';
-      const bundleId = rows[0]['BundleID'] || '';
-
-      // Pad MRU ids to 6 digits, then decode CC AA RR
-      const padMru = (id) => id.padStart(6, '0');
-      const mruIds = [...new Set(rows.map(r => padMru((r['MRU id'] || '').trim())).filter(Boolean))];
-      const firstMru = mruIds[0] || '000000';
-      const mruCycle = firstMru.substring(0, 2);   // first 2 digits
-      const mruArea = firstMru.substring(2, 4);   // middle 2 digits
-      // Route numbers = last 2 digits of each unique MRU id
-      const routeNums = mruIds.map(id => id.substring(4, 6));
-
-      const isRead = (r) => (r['READING'] || '').trim() !== '' ||
-        ((r['SKIP'] || '').trim() !== '' && (r['SKIP'] || '').trim() !== 'Other');
-      const read = rows.filter(isRead).length;
-      const total = rows.length;
-      const estVal = (r) => parseInt(r['# EST'] || r['Estimates'] || '0', 10);
-      const est3Rows = rows.filter(r => estVal(r) === 3);
-      const est46Rows = rows.filter(r => { const v = estVal(r); return v >= 4 && v <= 6; });
-      const est7plusRows = rows.filter(r => estVal(r) >= 7);
-      const est3 = est3Rows.length;
-      const est46 = est46Rows.length;
-      const est7plus = est7plusRows.length;
-      const est3Read = est3Rows.filter(isRead).length;
-      const est46Read = est46Rows.filter(isRead).length;
-      const est7plusRead = est7plusRows.filter(isRead).length;
-      return { key, bundleName: key, mruIds, routeNums, mruCycle, mruArea, bundleId, rows, city, total, read, est3, est46, est7plus, est3Read, est46Read, est7plusRead };
-    });
-  }
-
-  // ─── Bundle Status ────────────────────────────────
-  function getBundleStatus(bundle) {
-    if (sentBundles.has(bundle.key)) return 'sent';
-    const allDone = bundle.rows.length > 0 && bundle.rows.every(r =>
-      (r['READING'] || '').trim() !== '' || (r['SKIP'] || '').trim() !== ''
-    );
-    if (allDone) return 'complete';
-    return 'in-progress';
-  }
-
-  function statusLabel(status) {
-    if (status === 'sent') return 'Email Sent';
-    if (status === 'complete') return 'Complete';
-    return 'In Progress';
-  }
-
-  // ─── Render Dashboard ─────────────────────────────
-  function renderHome() {
-    const totalCards = bundles.reduce((s, b) => s + b.total, 0);
-    const totalRead = bundles.reduce((s, b) => s + b.read, 0);
-    const totalSent = bundles.filter(b => sentBundles.has(b.key)).length;
-
-    sumBundles.textContent = bundles.length;
-    sumCards.textContent = totalCards;
-    sumRead.textContent = totalRead;
-    sumSent.textContent = totalSent;
-
-    if (bundles.length === 0) {
-      uploadPrompt.classList.remove('hidden');
-      bundleList.classList.add('hidden');
-      return;
-    }
-
-    uploadPrompt.classList.add('hidden');
-    bundleList.classList.remove('hidden');
-    bundleList.innerHTML = '';
-
-    const frag = document.createDocumentFragment();
-    bundles.forEach(bundle => {
-      const status = getBundleStatus(bundle);
-      const pct = bundle.total > 0
-        ? Math.round((bundle.read / bundle.total) * 100) : 0;
-      const isSent = status === 'sent';
-
-      const card = document.createElement('div');
-      card.className = 'bundle-card';
-      card.innerHTML = `
-        <div class="bundle-card-strip ${status}"></div>
-        <div class="bundle-card-body">
-          <div class="bundle-card-top">
-            <div>
-              <div class="bundle-mru">${bundle.mruIds.length} Route${bundle.mruIds.length !== 1 ? 's' : ''}</div>
-              <div class="bundle-name">${esc(bundle.bundleName)}</div>
-              <div class="bundle-area">Area ${esc(bundle.mruArea)}</div>
-            </div>
-            <span class="status-badge ${status}">
-              <span class="status-dot"></span>
-              ${statusLabel(status)}
-            </span>
-          </div>
-
-          <div class="bundle-card-count">
-            <span class="bundle-count-label">${bundle.read} of ${bundle.total} cards read</span>
-            <span class="bundle-count-frac">${pct}%</span>
-          </div>
-          <div class="bundle-progress-bar">
-            <div class="bundle-progress-fill ${status}" style="width:${pct}%"></div>
-          </div>
-
-          <div class="bundle-card-footer">
-            <div class="bundle-meta-item">
-              <span class="bundle-meta-label">Cards</span>
-              <span class="bundle-meta-val">${bundle.total}</span>
-            </div>
-            <div class="bundle-meta-item">
-              <span class="bundle-meta-label">3 Est</span>
-              <span class="bundle-meta-val"><span class="meta-complete">${bundle.est3Read}</span>/${bundle.est3}</span>
-            </div>
-            <div class="bundle-meta-item">
-              <span class="bundle-meta-label">4-6 Est</span>
-              <span class="bundle-meta-val"><span class="meta-complete">${bundle.est46Read}</span>/${bundle.est46}</span>
-            </div>
-            <div class="bundle-meta-item">
-              <span class="bundle-meta-label">7+ Est</span>
-              <span class="bundle-meta-val"><span class="meta-complete">${bundle.est7plusRead}</span>/${bundle.est7plus}</span>
-            </div>
-          </div>
-
-          ${status === 'complete' || isSent ? `
-          <button class="bundle-send-btn ${isSent ? 'sent-state' : ''}"
-                  data-key="${esc(bundle.key)}"
-                  ${isSent ? 'disabled' : ''}>
-            ${isSent
-            ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Sent`
-            : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Send Bundle`
+            return;
           }
-          </button>` : ''}
+          const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+          const cacheKey = `${cleanAddressForGeocode(f.streetAddress, f.misAddress)},${f.city}`.toLowerCase();
+          cache[cacheKey] = coords;
+          saveGeoCache(cache);
 
-          <button class="bundle-email-btn" title="Email this bundle">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <rect x="2" y="4" width="20" height="16" rx="2"/>
-              <polyline points="2,4 12,13 22,4"/>
-            </svg>
-          </button>
+          geocodedPoints.push({ lat: coords.lat, lng: coords.lng, row: f.row });
+          geocodeFailures = geocodeFailures.filter((_, i) => i !== idx);
+          savePoints();
+          addSingleMarker(coords, f.row);
+          updateNotFoundBar();
 
-          <button class="bundle-delete-btn" title="Delete this bundle">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-            </svg>
-          </button>
-        </div>
-      `;
-
-      // Send button handler
-      const sendBtn = card.querySelector('.bundle-send-btn');
-      if (sendBtn && !isSent) {
-        sendBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          markAsSent(bundle.key);
+          status.textContent = 'Located!';
+          status.className = 'geocode-fix-status geocode-fix-ok';
+          btn.textContent = '✓';
+          input.disabled = true;
+        })
+        .catch(() => {
+          status.textContent = 'Network error — try again';
+          status.className = 'geocode-fix-status geocode-fix-fail';
+          btn.disabled = false;
+          btn.textContent = 'Retry';
         });
-      }
-
-      // Email button handler
-      card.querySelector('.bundle-email-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        emailBundle(bundle);
-      });
-
-      // Delete button handler
-      card.querySelector('.bundle-delete-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        showDeleteConfirm(bundle);
-      });
-
-      // Searchable blob: all addresses + serials + meter sizes in this bundle
-      card.dataset.search = bundle.rows.map(r => [
-        (r['#'] || '') + ' ' + (r['STREET'] || ''),
-        r['Serial No.'] || '',
-        r['MTR SIZE'] || '',
-      ].join(' ')).join(' ').toLowerCase();
-
-      // Card tap → open bundle detail
-      card.addEventListener('click', () => showBundle(bundle));
-
-      frag.appendChild(card);
     });
 
-    bundleList.appendChild(frag);
-    const verEl = document.createElement('div');
-    verEl.className = 'app-version';
-    verEl.textContent = APP_VERSION;
-    bundleList.appendChild(verEl);
-    updateRecoverBar();
-  }
+    geocodeFixList.appendChild(item);
+  });
 
-  // ─── Mark Bundle as Sent ──────────────────────────
-  function markAsSent(key) {
-    sentBundles.add(key);
-    saveSentState();
-    renderHome();
-    showToast(`Bundle "${key}" marked as sent`);
-  }
+  geocodeFixModal.classList.remove('hidden');
+}
 
-  // ─── Navigation ───────────────────────────────────
-  function goHome() {
-    if (leafletMap) leafletMap.stopLocate();
-    clearGpsTimer();
-    viewBundle.classList.add('hidden');
-    viewCard.classList.add('hidden');
-    viewMap.classList.add('hidden');
-    viewHome.classList.remove('hidden');
-  }
+// ── Engineer filter ───────────────────────────
+function buildEngineerFilter() {
+  const engineers = [...new Set(
+    workOrders.map(r => (r['engineer'] || '').trim()).filter(Boolean)
+  )].sort();
+  engineerFilterSel.innerHTML = '<option value="">All Engineers</option>';
+  engineers.forEach(eng => {
+    const opt = document.createElement('option');
+    opt.value = eng;
+    opt.textContent = eng;
+    engineerFilterSel.appendChild(opt);
+  });
+  engineerFilterSel.classList.toggle('hidden', engineers.length === 0);
+}
 
-  function cardGoBack() {
-    viewCard.classList.add('hidden');
-    if (cardReturnTarget === 'map') {
-      viewBundle.classList.add('hidden');  // showBundleDetail may have un-hidden this during save
-      viewMap.classList.remove('hidden');
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => { if (leafletMap) leafletMap.invalidateSize(); });
-      });
-    } else {
-      viewBundle.classList.remove('hidden');
+function getFilteredPoints() {
+  const eng = engineerFilterSel.value;
+  return geocodedPoints.filter(p => {
+    if (eng && (p.row['engineer'] || '').trim() !== eng) return false;
+    if (dueTodayActive && !isDueToday(p.row)) return false;
+    return true;
+  });
+}
+
+function updateBadge() {
+  const n = getFilteredPoints().length;
+  woCountBadge.textContent = `${n} job${n !== 1 ? 's' : ''}`;
+}
+
+function updateStatusBar() {
+  const pts = getFilteredPoints();
+  const total = pts.length;
+  if (total === 0) { statusBar.classList.add('hidden'); return; }
+  const done = pts.filter(p => completions[p.row['Workorder'] || '']).length;
+  const remaining = total - done;
+  statusBar.innerHTML = `<span class="status-bar-version">${APP_VERSION}</span><span>${done} complete · ${remaining} remaining</span>`;
+  statusBar.classList.remove('hidden');
+}
+
+// ── Load CSV and kick off geocoding ───────────
+function applyNewCSV(records, keepPrev) {
+  let finalRecords = records;
+
+  if (keepPrev && workOrders.length && selectedEngineer) {
+    const prevIncomplete = workOrders.filter(r => {
+      const wo = (r['Workorder'] || '').trim();
+      return (r['engineer'] || '').trim() === selectedEngineer && wo && !completions[wo];
+    });
+    if (prevIncomplete.length) {
+      const newWoIds = new Set(records.map(r => (r['Workorder'] || '').trim()));
+      const extras = prevIncomplete.filter(r => !newWoIds.has((r['Workorder'] || '').trim()));
+      finalRecords = [...records, ...extras];
     }
   }
 
-  function showBundle(bundle) {
-    pendingBundle = bundle;
-    if (!readerName) {
-      readerInput.value = '';
-      readerModal.classList.remove('hidden');
-      setTimeout(() => readerInput.focus(), 50);
-    } else {
-      showBundleDetail(bundle);
-    }
-  }
+  workOrders = finalRecords;
+  geocodedPoints = [];
+  geocodeFailures = [];
+  selectedEngineer = '';
+  clearMapMarkers();
 
-  // ─── Recompute Bundle Stats After Edits ───────────
-  function refreshBundleStats(bundle) {
-    const isRead = (r) => (r['READING'] || '').trim() !== '' ||
-      ((r['SKIP'] || '').trim() !== '' && (r['SKIP'] || '').trim() !== 'Other');
-    const estVal = (r) => parseInt(r['# EST'] || r['Estimates'] || '0', 10);
-    const est3Rows = bundle.rows.filter(r => estVal(r) === 3);
-    const est46Rows = bundle.rows.filter(r => { const v = estVal(r); return v >= 4 && v <= 6; });
-    const est7plusRows = bundle.rows.filter(r => estVal(r) >= 7);
-    bundle.read = bundle.rows.filter(isRead).length;
-    bundle.est3 = est3Rows.length;
-    bundle.est46 = est46Rows.length;
-    bundle.est7plus = est7plusRows.length;
-    bundle.est3Read = est3Rows.filter(isRead).length;
-    bundle.est46Read = est46Rows.filter(isRead).length;
-    bundle.est7plusRead = est7plusRows.filter(isRead).length;
-  }
+  try { localStorage.setItem(RECORDS_KEY, JSON.stringify(workOrders)); } catch (_) { }
+  try { localStorage.removeItem(ENGINEER_KEY); } catch (_) { }
+  try { localStorage.removeItem(POINTS_KEY); } catch (_) { }
 
-  // ─── Card Detail View ─────────────────────────────
-  function showCardDetail(row, bundle, returnTarget) {
-    currentRow = row;
-    currentBundle = bundle;
-    if (returnTarget) cardReturnTarget = returnTarget;
-    const backLabel = cardReturnTarget === 'map' ? 'Map' : 'List';
-    document.getElementById('card-back-label').textContent = backLabel;
-    document.getElementById('card-back-nav-label').textContent = backLabel;
+  showEngineerView();
+}
 
-    const num = row['#'] || '';
-    const street = row['STREET'] || '';
-    const address = [num, street].filter(Boolean).join(' ');
-    const loc = (row['LOC'] || '').trim();
-    const spec = (row['SPEC INSTRUCTIONS'] || '').trim();
-
-    cardDtSeq.textContent = `Seq #${row['Seq #'] || '—'}`;
-    cardDtAddress.textContent = address || '—';
-    cardDtCity.textContent = row['City'] || '—';
-    cardDtMtrSize.textContent = row['MTR SIZE'] || '—';
-    cardDtSerial.textContent = row['Serial No.'] || '—';
-    cardDtEst.textContent = row['# EST'] || '0';
-
-    // Location — hide row if empty
-    cardDtLoc.textContent = loc;
-    cardDtLocRow.style.display = loc ? '' : 'none';
-
-    // Special instructions — hide block if empty
-    cardDtSpec.textContent = spec;
-    cardDtSpecWrap.classList.toggle('hidden', !spec);
-
-    // Pre-fill reading, skip, comments, and date
-    cardDtReading.value = (row['READING'] || '').trim();
-    const savedSkip = row['SKIP'] || '';
-    cardDtSkip.value = savedSkip;
-    cardDtSkipOther.value = row['SKIP_OTHER'] || '';
-    cardDtSkipOther.classList.toggle('hidden', savedSkip !== 'Other');
-    cardDtComments.value = row['COMMENTS'] || '';
-    const today = new Date().toLocaleDateString('en-CA');
-    const savedDate = (row['READ DATE'] || '').trim();
-    const isComplete = (row['READING'] || '').trim() !== '' ||
-      ((row['SKIP'] || '').trim() !== '' && (row['SKIP'] || '').trim() !== 'Other') ||
-      (row['COMMENTS'] || '').trim() !== '';
-    cardDtReadDate.value = savedDate || today;
-    cardDtReadDate.readOnly = isComplete;
-    cardDtReadDate.classList.toggle('date-locked', isComplete);
-
-    // Prev / next nav
-    const rows = bundle.rows;
-    const idx = rows.indexOf(row);
-    cardNavPos.textContent = `${idx + 1} / ${rows.length}`;
-    cardPrevBtn.disabled = idx === 0;
-    cardNextBtn.disabled = idx === rows.length - 1;
-
-    viewBundle.classList.add('hidden');
-    viewCard.classList.remove('hidden');
-    setTimeout(() => cardDtReading.focus(), 80);
-  }
-
-  cardPrevBtn.addEventListener('click', () => {
-    const rows = currentBundle.rows;
-    const idx = rows.indexOf(currentRow);
-    if (idx > 0) showCardDetail(rows[idx - 1], currentBundle);
-  });
-
-  cardNextBtn.addEventListener('click', () => {
-    const rows = currentBundle.rows;
-    const idx = rows.indexOf(currentRow);
-    if (idx < rows.length - 1) showCardDetail(rows[idx + 1], currentBundle);
-  });
-
-  // Save reading handler
-  cardDtSaveBtn.addEventListener('click', () => {
-    const reading = cardDtReading.value.trim();
-    const skip = cardDtSkip.value;
-    const date = cardDtReadDate.value;
-    const comments = cardDtComments.value.trim();
-
-    if (reading && skip) {
-      showToast('Cannot have both a reading and a skip — clear one first.', true);
+function loadCSV(file) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const records = parseCSV(ev.target.result);
+    if (!records.length || !records[0].hasOwnProperty('Street Address')) {
+      showToast('Not a valid work order CSV — missing "Street Address" column', true);
       return;
     }
 
-    const isComplete = reading !== '' || (skip !== '' && skip !== 'Other') || comments !== '';
-    currentRow['READING'] = reading;
-    currentRow['READ DATE'] = isComplete ? date : '';
-    currentRow['SKIP'] = skip;
-    currentRow['SKIP_OTHER'] = skip === 'Other' ? cardDtSkipOther.value.trim() : '';
-    currentRow['COMMENTS'] = comments;
-
-    updateMapMarkerForRow(currentRow);  // refresh marker color immediately if on map
-
-    // Lock or unlock the date field to match the new state
-    cardDtReadDate.readOnly = isComplete;
-    cardDtReadDate.classList.toggle('date-locked', isComplete);
-
-    refreshBundleStats(currentBundle);
-    saveRecordsBackup();               // persist every save in case of crash
-    renderHome();                      // keeps main page cards in sync
-
-    // Brief "Saved" confirmation, then advance to the next card
-    cardDtSaveBtn.textContent = '✓ Saved';
-    cardDtSaveBtn.disabled = true;
-
-    const rows = currentBundle.rows;
-    const savedIdx = rows.indexOf(currentRow);
-
-    setTimeout(() => {
-      cardDtSaveBtn.textContent = 'Save Reading';
-      cardDtSaveBtn.disabled = false;
-      showBundleDetail(currentBundle);   // re-renders list + header
-      if (savedIdx < rows.length - 1) {
-        showCardDetail(rows[savedIdx + 1], currentBundle);
-      }
-    }, 600);
-  });
-
-  // ─── Reader Name Modal Handlers ───────────────────
-  function setReaderName(name) {
-    readerName = name;
-    homeReaderName.textContent = name || 'Tap to set name';
-    bdReaderName.textContent = name;
-    try { localStorage.setItem(READER_KEY, name); } catch (_) { }
-  }
-
-  readerConfirm.addEventListener('click', () => {
-    const name = readerInput.value.trim();
-    if (!name) { readerInput.focus(); return; }
-    setReaderName(name);
-    readerModal.classList.add('hidden');
-    if (pendingBundle) showBundleDetail(pendingBundle);
-  });
-
-  readerCancel.addEventListener('click', () => {
-    readerModal.classList.add('hidden');
-    pendingBundle = null;
-  });
-
-  readerInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') readerConfirm.click();
-  });
-
-  // ─── Tap Name to Edit ─────────────────────────────
-  homeReaderName.addEventListener('click', () => {
-    readerInput.value = readerName;
-    pendingBundle = null;
-    readerModal.classList.remove('hidden');
-    setTimeout(() => readerInput.focus(), 50);
-  });
-
-  // ─── Home Bundle Search ───────────────────────────
-  homeSearch.addEventListener('input', () => {
-    const q = homeSearch.value.trim().toLowerCase();
-    let visible = 0;
-    Array.from(bundleList.children).forEach(el => {
-      if (el.classList.contains('bd-no-results')) return;
-      if (!q) { el.hidden = false; visible++; return; }
-      const match = (el.dataset.search || '').includes(q);
-      el.hidden = !match;
-      if (match) visible++;
-    });
-    let noRes = bundleList.querySelector('.bd-no-results');
-    if (q && visible === 0) {
-      if (!noRes) {
-        noRes = document.createElement('div');
-        noRes.className = 'bd-no-results';
-        bundleList.appendChild(noRes);
-      }
-      noRes.textContent = `No bundles match "${homeSearch.value.trim()}"`;
-    } else if (noRes) {
-      noRes.remove();
-    }
-  });
-
-  // ─── Address List Search ──────────────────────────
-  function applyBdFilters() {
-    const q = bdSearch.value.trim().toLowerCase();
-    const filterActive = bdShowMissed || bdShowSkipped;
-    let visible = 0;
-    Array.from(addressList.children).forEach(el => {
-      if (el.classList.contains('bd-no-results')) return;
-      const matchesSearch = !q ||
-        (el.dataset.address || '').includes(q) ||
-        (el.dataset.serial || '').includes(q) ||
-        (el.dataset.mtrsize || '').includes(q);
-      const matchesFilter = !filterActive ||
-        (bdShowMissed && el.dataset.status === 'unread') ||
-        (bdShowSkipped && el.dataset.status === 'skip');
-      el.hidden = !(matchesSearch && matchesFilter);
-      if (!el.hidden) visible++;
-    });
-    let noRes = addressList.querySelector('.bd-no-results');
-    if ((q || filterActive) && visible === 0) {
-      if (!noRes) {
-        noRes = document.createElement('div');
-        noRes.className = 'bd-no-results';
-        addressList.appendChild(noRes);
-      }
-      noRes.textContent = q
-        ? `No results for "${bdSearch.value.trim()}"`
-        : 'No cards match the selected filter';
-    } else if (noRes) {
-      noRes.remove();
-    }
-  }
-
-  bdSearch.addEventListener('input', applyBdFilters);
-
-  bdFilterMissedBtn.addEventListener('click', () => {
-    bdShowMissed = !bdShowMissed;
-    bdFilterMissedBtn.classList.toggle('active', bdShowMissed);
-    applyBdFilters();
-  });
-
-  bdFilterSkippedBtn.addEventListener('click', () => {
-    bdShowSkipped = !bdShowSkipped;
-    bdFilterSkippedBtn.classList.toggle('active', bdShowSkipped);
-    applyBdFilters();
-  });
-
-  // ─── Totals / Daily Report View ───────────────────
-  function showTotalsView(bundle) {
-    const rates = bundleRates[bundle.key] || null;
-    const fmtRate = (r) => r != null ? `$${r.toFixed(2)}` : '—';
-    const today = new Date().toLocaleDateString('en-CA');
-    const issuedDate = rates?.issuedDate || today;
-    const routeStr = bundle.mruIds.length
-      ? `A${bundle.mruArea} – ${bundle.routeNums.join(', ')}`
-      : '—';
-
-    const row = (label, rate, read, issued) => `
-      <tr>
-        <td>${label}</td>
-        <td class="report-rate">${fmtRate(rate)}</td>
-        <td class="report-col-center">${read}</td>
-        <td class="report-col-center report-divider">/</td>
-        <td class="report-col-center">${issued}</td>
-      </tr>`;
-
-    document.getElementById('totals-body').innerHTML = `
-      <div class="report-title-block">
-        <div class="report-company">M.E.T. Utilities Management Ltd.</div>
-        <div class="report-main-title">METER READER DAILY REPORT</div>
-        <div class="report-sub-title">Outcards Regular Calls</div>
-      </div>
-
-      <div class="report-info-grid">
-        <div class="report-info-item">
-          <span class="report-info-label">Cycle</span>
-          <span class="report-info-value">${esc(bundle.mruCycle)}</span>
-        </div>
-        <div class="report-info-item">
-          <span class="report-info-label">Issued Date</span>
-          <span class="report-info-value">${issuedDate}</span>
-        </div>
-        <div class="report-info-item">
-          <span class="report-info-label">Route #</span>
-          <span class="report-info-value">${esc(routeStr)}</span>
-        </div>
-        <div class="report-info-item">
-          <span class="report-info-label">City / Route</span>
-          <span class="report-info-value">${esc(bundle.city || bundle.bundleName)}</span>
-        </div>
-        <div class="report-info-item">
-          <span class="report-info-label">Total Issued</span>
-          <span class="report-info-value report-info-big">${bundle.total}</span>
-        </div>
-        <div class="report-info-item">
-          <span class="report-info-label">Total Read</span>
-          <span class="report-info-value report-info-big">${bundle.read}</span>
-        </div>
-      </div>
-
-      <table class="report-table">
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Rate</th>
-            <th class="report-col-center">Read</th>
-            <th class="report-col-center"></th>
-            <th class="report-col-center">Issued</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${row('Est 3', rates ? rates.est3 : null, bundle.est3Read, bundle.est3)}
-          ${row('Est 4–6', rates ? rates.est46 : null, bundle.est46Read, bundle.est46)}
-          ${row('Est 7+', rates ? rates.est7p : null, bundle.est7plusRead, bundle.est7plus)}
-          <tr class="report-total-row">
-            <td>Total</td>
-            <td></td>
-            <td class="report-col-center">${bundle.read}</td>
-            <td class="report-col-center report-divider">/</td>
-            <td class="report-col-center">${bundle.total}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="report-reader-section">
-        <div class="report-field-row">
-          <span class="report-field-label">Meter Reader Name</span>
-          <span class="report-field-value">${esc(readerName || '—')}</span>
-        </div>
-        <div class="report-field-row">
-          <span class="report-field-label">Signed (Meter Reader)</span>
-          <span class="report-sig-line"></span>
-        </div>
-      </div>
-    `;
-
-    viewBundle.classList.add('hidden');
-    viewTotals.classList.remove('hidden');
-  }
-
-  // ─── Bundle Detail View ───────────────────────────
-  function showBundleDetail(bundle) {
-    pendingBundle = null;
-    document.getElementById('bd-report-btn').onclick = () => showTotalsView(bundle);
-
-    const status = getBundleStatus(bundle);
-    const pct = bundle.total > 0 ? Math.round((bundle.read / bundle.total) * 100) : 0;
-
-    // Header — row 1
-    bdStatusBadge.textContent = statusLabel(status);
-    bdStatusBadge.className = `status-badge ${status}`;
-
-    // Header — row 2
-    bdRoutes.textContent = `${bundle.mruIds.length} Route${bundle.mruIds.length !== 1 ? 's' : ''}`;
-    bdTitle.textContent = bundle.bundleName;
-    bdArea.textContent = `Area ${bundle.mruArea}`;
-
-    // Progress
-    bdCountLabel.textContent = `${bundle.read} of ${bundle.total} cards read`;
-    bdCountPct.textContent = `${pct}%`;
-    bdProgressFill.style.width = `${pct}%`;
-    bdProgressFill.className = `bd-progress-fill ${status}`;
-
-    // Stats footer
-    bdTotal.textContent = bundle.total;
-    bdEst3r.textContent = bundle.est3Read;
-    bdEst3.textContent = bundle.est3;
-    bdEst46r.textContent = bundle.est46Read;
-    bdEst46.textContent = bundle.est46;
-    bdEst7pr.textContent = bundle.est7plusRead;
-    bdEst7p.textContent = bundle.est7plus;
-
-    bdReaderName.textContent = readerName;
-
-    // Sort rows by Seq #
-    const sorted = [...bundle.rows].sort((a, b) => {
-      const sa = parseInt(a['Seq #'] || '0', 10);
-      const sb = parseInt(b['Seq #'] || '0', 10);
-      return sa - sb;
-    });
-
-    bdSearch.value = '';
-    bdShowMissed = false;
-    bdShowSkipped = false;
-    bdFilterMissedBtn.classList.remove('active');
-    bdFilterSkippedBtn.classList.remove('active');
-    addressList.innerHTML = '';
-    const frag = document.createDocumentFragment();
-
-    sorted.forEach(row => {
-      const seq = row['Seq #'] || '';
-      const num = row['#'] || '';
-      const street = row['STREET'] || '';
-      const address = [num, street].filter(Boolean).join(' ');
-      const spec = row['SPEC INSTRUCTIONS'] || '';
-      const loc = row['LOC'] || '';
-      const mtrSize = row['MTR SIZE'] || '';
-      const serial = row['Serial No.'] || '';
-      const reading = (row['READING'] || '').trim();
-      const skip = (row['SKIP'] || '').trim();
-      const readDate = (row['READ DATE'] || '').trim();
-      const comment = (row['COMMENTS'] || '').trim();
-      const estVal = parseInt(row['# EST'] || '0', 10);
-
-      let estClass = 'est-ok';
-      let estLabel = '';
-      if (estVal === 3) { estClass = 'est-3'; estLabel = '3 Est'; }
-      else if (estVal >= 4 && estVal <= 6) { estClass = 'est-46'; estLabel = `${estVal} Est`; }
-      else if (estVal >= 7) { estClass = 'est-7p'; estLabel = `${estVal} Est`; }
-
-      const meterMeta = [
-        loc ? `Loc: ${loc}` : '',
-        mtrSize ? `Size: ${mtrSize}` : '',
-        serial ? `#: ${serial}` : '',
-      ].filter(Boolean).join('  ·  ');
-
-      const card = document.createElement('div');
-      card.className = `addr-card${skip ? ' addr-skip' : reading ? ' addr-read' : ''}`;
-      card.dataset.address = address.toLowerCase();
-      card.dataset.serial = serial.toLowerCase();
-      card.dataset.mtrsize = mtrSize.toLowerCase();
-      card.dataset.status = skip ? 'skip' : reading ? 'read' : 'unread';
-      card.innerHTML = `
-        <div class="addr-seq">${esc(seq)}</div>
-        <div class="addr-info">
-          <div class="addr-street">${esc(address) || '—'}</div>
-          ${meterMeta ? `<div class="addr-meter">${esc(meterMeta)}</div>` : ''}
-          ${spec ? `<div class="addr-spec">${esc(spec)}</div>` : ''}
-          ${(readDate || comment) ? `<div class="addr-read-info">${readDate ? `<span class="addr-read-date">${esc(readDate)}</span>` : ''}${comment ? `<span class="addr-comment">${esc(comment)}</span>` : ''}</div>` : ''}
-        </div>
-        <div class="addr-right">
-          ${skip ? `<span class="addr-status-badge addr-skip-badge">Skip</span>` : ''}
-          ${!skip && reading ? `<span class="addr-status-badge addr-read-badge">Read</span>` : ''}
-          ${estLabel ? `<span class="addr-est-badge ${estClass}">${estLabel}</span>` : ''}
-        </div>
-      `;
-      card.addEventListener('click', () => showCardDetail(row, bundle, 'bundle'));
-
-      frag.appendChild(card);
-    });
-
-    addressList.appendChild(frag);
-
-    viewHome.classList.add('hidden');
-    viewBundle.classList.remove('hidden');
-  }
-
-  // ─── CSV File Load ────────────────────────────────
-  const dupModal = document.getElementById('dup-bundle-modal');
-  const dupDesc = document.getElementById('dup-bundle-desc');
-  const dupCancelBtn = document.getElementById('dup-bundle-cancel');
-
-  function commitLoad(records, rates) {
-    allRecords = [...allRecords, ...records];
-    bundles = groupIntoBundles(allRecords);
-    geocodedPoints = [];  // reset so map re-geocodes with new addresses
-    if (rates) {
-      const issuedDate = new Date().toLocaleDateString('en-CA');
-      getNewBundleKeys(records).forEach(key => { bundleRates[key] = { ...rates, issuedDate }; });
-      saveBundleRates();
-    }
-    renderHome();
-    saveRecordsBackup();
-    showToast(`Added ${records.length} records · ${bundles.length} bundles total`);
-  }
-
-  // ─── Delete Bundle Modal ──────────────────────────
-  const delModal = document.getElementById('del-bundle-modal');
-  const delDesc = document.getElementById('del-bundle-desc');
-  const delCancelBtn = document.getElementById('del-bundle-cancel');
-  const delConfirmBtn = document.getElementById('del-bundle-confirm');
-  let pendingDelete = null;   // bundle queued for deletion
-
-  function showDeleteConfirm(bundle) {
-    delDesc.textContent = `Delete "${bundle.bundleName}"? All records and readings will be removed.`;
-    pendingDelete = bundle;
-    delModal.classList.remove('hidden');
-  }
-
-  delCancelBtn.addEventListener('click', () => {
-    delModal.classList.add('hidden');
-    pendingDelete = null;
-  });
-
-  delConfirmBtn.addEventListener('click', () => {
-    delModal.classList.add('hidden');
-    if (!pendingDelete) return;
-    const key = pendingDelete.key;
-
-    // Archive rows before removing
-    const removedRows = allRecords.filter(r =>
-      ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') === key
-    );
-    deletedBundles.push({ key, bundleName: pendingDelete.bundleName, rows: removedRows, deletedAt: Date.now() });
-    saveDeletedBundles();
-
-    allRecords = allRecords.filter(r =>
-      ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') !== key
-    );
-    sentBundles.delete(key);
-    bundles = groupIntoBundles(allRecords);
-    saveRecordsBackup();
-    saveSentState();
-    renderHome();
-    updateRecoverBar();
-    showToast(`Bundle "${pendingDelete.bundleName}" deleted`);
-    pendingDelete = null;
-  });
-
-  // ─── Recover Deleted Bundles ──────────────────────
-  const recoverModal = document.getElementById('recover-modal');
-  const recoverList = document.getElementById('recover-list');
-  document.getElementById('recover-modal-close').addEventListener('click', () => {
-    recoverModal.classList.add('hidden');
-  });
-
-  function updateRecoverBar() {
-    // Remove any existing recover bar from bundle-list
-    const existing = bundleList.querySelector('.recover-bar');
-    if (existing) existing.remove();
-
-    const cutoff = Date.now() - TWO_WEEKS;
-    const visible = deletedBundles.filter(d => d.deletedAt >= cutoff);
-    if (!visible.length) return;
-
-    const bar = document.createElement('div');
-    bar.className = 'recover-bar';
-    bar.innerHTML = `
-      <button class="recover-btn" id="recover-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <polyline points="1 4 1 10 7 10"/>
-          <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
-        </svg>
-        Recover Deleted Bundles
-      </button>`;
-    bar.querySelector('.recover-btn').addEventListener('click', openRecoverModal);
-    bundleList.appendChild(bar);
-  }
-
-  function openRecoverModal() {
-    const cutoff = Date.now() - TWO_WEEKS;
-    const visible = deletedBundles.filter(d => d.deletedAt >= cutoff);
-    recoverList.innerHTML = '';
-    visible.forEach(d => {
-      const daysLeft = Math.ceil((d.deletedAt + TWO_WEEKS - Date.now()) / (24 * 60 * 60 * 1000));
-      const deletedDate = new Date(d.deletedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      const item = document.createElement('div');
-      item.className = 'recover-item';
-      item.innerHTML = `
-        <div class="recover-item-info">
-          <div class="recover-item-name">${esc(d.bundleName)}</div>
-          <div class="recover-item-meta">Deleted ${deletedDate} · ${d.rows.length} records · expires in ${daysLeft}d</div>
-        </div>
-        <button class="recover-item-btn">Restore</button>
-      `;
-      item.querySelector('.recover-item-btn').addEventListener('click', () => {
-        const currentForBundle = allRecords.filter(r =>
-          ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') === d.key
-        );
-        const alreadyLoaded = currentForBundle.length > 0;
-
-        let restoredRows;
-        if (!alreadyLoaded) {
-          // Simple restore — no conflict
-          restoredRows = d.rows;
-        } else {
-          // Merge: current wins for actioned records; archived fills in unread ones
-          const matchKey = r => (r['Serial No.'] || '').trim()
-            || ((r['#'] || '').trim() + '|' + (r['STREET'] || '').trim());
-          const isActioned = r => !!(r['READING'] || '').trim() || !!(r['SKIP'] || '').trim();
-
-          const archivedMap = new Map(d.rows.map(r => [matchKey(r), r]));
-          const currentMap = new Map(currentForBundle.map(r => [matchKey(r), r]));
-
-          let recovered = 0;
-
-          // Start with current records, filling in archived readings where current is unread
-          restoredRows = currentForBundle.map(cur => {
-            if (isActioned(cur)) return cur; // current wins
-            const arch = archivedMap.get(matchKey(cur));
-            if (arch && isActioned(arch)) {
-              recovered++;
-              return {
-                ...cur,
-                'READING': arch['READING'] || '',
-                'READ DATE': arch['READ DATE'] || '',
-                'SKIP': arch['SKIP'] || '',
-                'SKIP_OTHER': arch['SKIP_OTHER'] || '',
-                'COMMENTS': arch['COMMENTS'] || '',
-              };
-            }
-            return cur;
-          });
-
-          // Append archived records that don't exist in current copy
-          d.rows.forEach(arch => {
-            if (!currentMap.has(matchKey(arch))) {
-              restoredRows.push(arch);
-              if (isActioned(arch)) recovered++;
-            }
-          });
-
-          allRecords = allRecords.filter(r =>
-            ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') !== d.key
-          );
-          allRecords = [...allRecords, ...restoredRows];
-          bundles = groupIntoBundles(allRecords);
-          deletedBundles = deletedBundles.filter(x => x !== d);
-          saveDeletedBundles();
-          saveRecordsBackup();
-          renderHome();
-          updateRecoverBar();
-          recoverModal.classList.add('hidden');
-          showToast(recovered > 0
-            ? `Bundle "${d.bundleName}" merged — ${recovered} reading${recovered !== 1 ? 's' : ''} recovered`
-            : `Bundle "${d.bundleName}" merged — no new readings to recover`
-          );
-          return;
-        }
-
-        allRecords = allRecords.filter(r =>
-          ((r['Bundle'] || r['City'] || '').trim() || 'Unknown') !== d.key
-        );
-        allRecords = [...allRecords, ...restoredRows];
-        bundles = groupIntoBundles(allRecords);
-        deletedBundles = deletedBundles.filter(x => x !== d);
-        saveDeletedBundles();
-        saveRecordsBackup();
-        renderHome();
-        updateRecoverBar();
-        recoverModal.classList.add('hidden');
-        showToast(`Bundle "${d.bundleName}" restored`);
+    // If there are incomplete work orders from a previous session, offer to keep them
+    if (workOrders.length && selectedEngineer) {
+      const prevIncomplete = workOrders.filter(r => {
+        const wo = (r['Workorder'] || '').trim();
+        return (r['engineer'] || '').trim() === selectedEngineer && wo && !completions[wo];
       });
-      recoverList.appendChild(item);
-    });
-    recoverModal.classList.remove('hidden');
-  }
+      if (prevIncomplete.length) {
+        pendingRecords = records;
+        mergeModalDesc.textContent =
+          `You have ${prevIncomplete.length} incomplete work order${prevIncomplete.length !== 1 ? 's' : ''} from your previous session. Keep them alongside the new file?`;
+        mergeModal.classList.remove('hidden');
+        return;
+      }
+    }
 
-  dupCancelBtn.addEventListener('click', () => {
-    dupModal.classList.add('hidden');
+    applyNewCSV(records, false);
+  };
+  reader.readAsText(file);
+}
+
+// ── Engineer picker ───────────────────────────
+function showEngineerView() {
+  viewHome.classList.add('hidden');
+  viewMap.classList.add('hidden');
+  viewEngineer.classList.remove('hidden');
+
+  const names = [...new Set(
+    workOrders.map(r => (r['engineer'] || '').trim()).filter(Boolean)
+  )].sort();
+
+  engineerList.innerHTML = '';
+  names.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'engineer-pick-btn';
+    btn.textContent = name;
+    btn.addEventListener('click', () => selectEngineer(name));
+    engineerList.appendChild(btn);
   });
+}
 
-  function getNewBundleKeys(records) {
-    const hasBundle = records.some(r => (r['Bundle'] || '').trim() !== '');
-    return [...new Set(records.map(r => hasBundle
-      ? ((r['Bundle'] || '').trim() || (r['City'] || '').trim() || 'Unknown')
-      : ((r['City'] || '').trim() || 'Unknown')
-    ))];
-  }
+function selectEngineer(name) {
+  selectedEngineer = name;
+  try { localStorage.setItem(ENGINEER_KEY, name); } catch (_) { }
 
-  csvFileInput.addEventListener('change', (e) => {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
+  // Narrow the saved records down to just this engineer's rows so the
+  // localStorage payload stays small regardless of how large the full CSV is.
+  const myJobs = workOrders.filter(r => (r['engineer'] || '').trim() === name);
+  try { localStorage.setItem(RECORDS_KEY, JSON.stringify(myJobs)); } catch (_) { }
 
-    let completed = 0;
-    let skipped = 0;
-    const validRecordSets = [];
+  viewEngineer.classList.add('hidden');
+  showMapView();
+  woCountBadge.textContent = `${myJobs.length} job${myJobs.length !== 1 ? 's' : ''}`;
 
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const records = parseCSV(ev.target.result);
-        if (records.length && records[0].hasOwnProperty('MRU id')) {
-          validRecordSets.push(records);
-        } else {
-          skipped++;
-        }
+  geocodeBar.classList.remove('hidden');
+  geocodeBarFill.style.width = '0%';
+  geocodeBarText.textContent = `Locating addresses… 0 / ${myJobs.length}`;
+  notFoundBanner.classList.add('hidden');
 
-        completed++;
-        if (completed < files.length) return;
-
-        // All files parsed — flatten and check for duplicates
-        const incoming = validRecordSets.flat();
-        if (!incoming.length) {
-          showToast(`No valid records found`, true);
-          return;
-        }
-
-        const existingKeys = new Set(bundles.map(b => b.key));
-        const dupKeys = getNewBundleKeys(incoming).filter(k => existingKeys.has(k));
-
-        if (dupKeys.length) {
-          const names = dupKeys.join(', ');
-          dupDesc.textContent = `The bundle${dupKeys.length > 1 ? 's' : ''} "${names}" ${dupKeys.length > 1 ? 'have' : 'has'} already been loaded. Loading it again would double the cards.`;
-          dupModal.classList.remove('hidden');
-        } else {
-          showRateModal(incoming);
-        }
-
-        if (skipped) showToast(`${skipped} file${skipped > 1 ? 's' : ''} skipped — not a valid meter CSV`, true);
-      };
-      reader.readAsText(file);
-    });
-
-    // Reset so same file(s) can be re-selected if needed
-    e.target.value = '';
+  geocodeAllRecords((done, total) => {
+    geocodeBarFill.style.width = Math.round((done / total) * 100) + '%';
+    geocodeBarText.textContent = `Locating addresses… ${done} / ${total}`;
+  }).then(({ points, failures }) => {
+    geocodedPoints = points;
+    geocodeFailures = failures;
+    savePoints();
+    geocodeBar.classList.add('hidden');
+    placeMarkers(getFilteredPoints(), true);
+    updateBadge();
+    updateStatusBar();
+    updateNotFoundBar();
+    if (failures.length) showToast(`${failures.length} address${failures.length > 1 ? 'es' : ''} could not be located`);
   });
+}
 
-  // ─── Per-bundle Email ─────────────────────────────
-  function buildReportText(bundle) {
-    const rates = bundleRates[bundle.key] || null;
-    const fmtRate = (r) => r != null ? `$${r.toFixed(2)}` : '—';
-    const today = new Date().toLocaleDateString('en-CA');
-    const issuedDate = rates?.issuedDate || today;
-    const routeStr = bundle.mruIds.length
-      ? `A${bundle.mruArea} – ${bundle.routeNums.join(', ')}`
-      : '—';
+// ── View switching ────────────────────────────
+function showMapView() {
+  viewHome.classList.add('hidden');
+  viewMap.classList.remove('hidden');
+  initLeafletMap();
+  // Fix Leaflet size after view switch
+  setTimeout(() => leafletMap && leafletMap.invalidateSize(), 100);
+}
 
-    const sep = '  ' + '─'.repeat(40);
-    const row = (label, rate, read, total) =>
-      `  ${label.padEnd(10)} ${fmtRate(rate).padEnd(8)} ${String(read).padStart(4)} / ${String(total)}`;
+function showHomeView() {
+  viewMap.classList.add('hidden');
+  viewHome.classList.remove('hidden');
+}
 
-    return [
-      'METER READER DAILY REPORT',
-      'M.E.T. Utilities Management Ltd.',
-      'Outcards Regular Calls',
-      '',
-      `Cycle:        ${bundle.mruCycle}`,
-      `Issued Date:  ${issuedDate}`,
-      `Route #:      ${routeStr}`,
-      `City / Route: ${bundle.city || bundle.bundleName}`,
-      `Total Issued: ${bundle.total}`,
-      `Total Read:   ${bundle.read}`,
-      '',
-      '  Category   Rate     Read / Issued',
-      sep,
-      row('Est 3', rates?.est3 ?? null, bundle.est3Read, bundle.est3),
-      row('Est 4–6', rates?.est46 ?? null, bundle.est46Read, bundle.est46),
-      row('Est 7+', rates?.est7p ?? null, bundle.est7plusRead, bundle.est7plus),
-      sep,
-      row('Total', null, bundle.read, bundle.total),
-      '',
-      `Meter Reader: ${readerName || '—'}`,
-      `Signed:       ______________________________`,
-    ].join('\r\n');
-  }
+// ── Restore from localStorage ─────────────────
+function tryRestoreSession() {
+  try {
+    const saved = localStorage.getItem(RECORDS_KEY);
+    if (!saved) return false;
+    const records = JSON.parse(saved);
+    if (!Array.isArray(records) || !records.length) return false;
+    workOrders = records;
+    return true;
+  } catch (_) { return false; }
+}
 
-  function buildBundleCSV(bundle) {
-    const rows = bundle.rows;
-    if (!rows.length) return '';
+// ── Event listeners ───────────────────────────
+csvFileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) loadCSV(file);
+  e.target.value = '';
+});
 
-    // Collect headers: original keys + ensure SKIP / SKIP_OTHER / COMMENTS included
-    const baseHeaders = Object.keys(rows[0]);
-    const extra = ['SKIP', 'SKIP_OTHER', 'COMMENTS'].filter(k => !baseHeaders.includes(k));
-    const headers = [...baseHeaders, ...extra];
+csvReloadInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) loadCSV(file);
+  e.target.value = '';
+});
 
-    function csvCell(val) {
-      const s = (val == null ? '' : String(val));
-      return (s.includes(',') || s.includes('"') || s.includes('\n'))
-        ? `"${s.replace(/"/g, '""')}"` : s;
-    }
-
-    const lines = [headers.map(csvCell).join(',')];
-    for (const row of rows) {
-      const skip = (row['SKIP'] || '').trim();
-      const skipOther = (row['SKIP_OTHER'] || '').trim();
-      const readingVal = skip
-        ? (skip === 'Other' && skipOther ? skipOther : skip)
-        : (row['READING'] || '');
-      lines.push(headers.map(h => {
-        if (h === 'READING') return csvCell(readingVal);
-        return csvCell(row[h] || '');
-      }).join(','));
-    }
-    return lines.join('\r\n');
-  }
-
-  // ─── Daily Backup ─────────────────────────────────
-  function buildAllRecordsCSV() {
-    if (!allRecords.length) return '';
-    const baseHeaders = Object.keys(allRecords[0]);
-    const extra = ['SKIP', 'SKIP_OTHER', 'COMMENTS'].filter(k => !baseHeaders.includes(k));
-    const headers = [...baseHeaders, ...extra];
-    function csvCell(val) {
-      const s = val == null ? '' : String(val);
-      return (s.includes(',') || s.includes('"') || s.includes('\n'))
-        ? `"${s.replace(/"/g, '""')}"` : s;
-    }
-    const lines = [headers.map(csvCell).join(',')];
-    for (const row of allRecords) {
-      const skip = (row['SKIP'] || '').trim();
-      const skipOther = (row['SKIP_OTHER'] || '').trim();
-      const readingVal = skip
-        ? (skip === 'Other' && skipOther ? skipOther : skip)
-        : (row['READING'] || '');
-      lines.push(headers.map(h => {
-        if (h === 'READING') return csvCell(readingVal);
-        return csvCell(row[h] || '');
-      }).join(','));
-    }
-    return lines.join('\r\n');
-  }
-
-  function doBackupDownload() {
-    const csv = buildAllRecordsCSV();
-    if (!csv) return;
-    const dateStr = new Date().toLocaleDateString('en-CA');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url; a.download = `meter-backup-${dateStr}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    try { localStorage.setItem(BACKUP_DATE_KEY, dateStr); } catch (_) { }
-    const bar = bundleList.querySelector('.backup-bar');
-    if (bar) bar.remove();
-  }
-
-  function checkDailyBackup() {
-    if (backupBarShown || !allRecords.length) return;
-    const today = new Date().toLocaleDateString('en-CA');
-    try { if (localStorage.getItem(BACKUP_DATE_KEY) === today) return; } catch (_) { }
-    backupBarShown = true;
-    const existing = bundleList.querySelector('.backup-bar');
-    if (existing) existing.remove();
-    const bar = document.createElement('div');
-    bar.className = 'backup-bar';
-    bar.innerHTML = `
-      <button class="backup-save-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/>
-          <line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
-        Save Daily Backup
-      </button>
-      <button class="backup-dismiss-btn" title="Dismiss">✕</button>`;
-    bar.querySelector('.backup-save-btn').addEventListener('click', doBackupDownload);
-    bar.querySelector('.backup-dismiss-btn').addEventListener('click', () => bar.remove());
-    bundleList.prepend(bar);
-  }
-
-  // ─── Email Provider Picker ────────────────────────
-  const emailProviderModal = document.getElementById('email-provider-modal');
-
-  function emailBundle(bundle) {
-    pendingEmailBundle = bundle;
-    // Show the Share button only when the browser supports file sharing
-    const shareBtn = document.getElementById('email-provider-share');
-    const testFile = new File([''], 'test.txt', { type: 'text/plain' });
-    shareBtn.classList.toggle('hidden', !(navigator.canShare && navigator.canShare({ files: [testFile] })));
-    emailProviderModal.classList.remove('hidden');
-  }
-
-  function doEmailWithProvider(provider) {
-    const bundle = pendingEmailBundle;
-    pendingEmailBundle = null;
-    emailProviderModal.classList.add('hidden');
-    if (!bundle) return;
-
-    markAsSent(bundle.key);
-
-    const safeName = bundle.bundleName.replace(/\s+/g, '_');
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const csvContent = buildBundleCSV(bundle);
-    const reportText = buildReportText(bundle);
-    const csvFile = new File([csvContent], `bundle_${safeName}_${dateStr}.csv`, { type: 'text/csv' });
-    const reportFile = new File([reportText], `report_${safeName}_${dateStr}.txt`, { type: 'text/plain' });
-    const subject = `Meter Reading — Bundle ${bundle.bundleName} — ${new Date().toLocaleDateString('en-US')}`;
-    const recipients = 'rovana.adjodha@metutilities.com,Sue.Vaillancourt@metutilities.com,Brandon.Bain@metutilities.com,mike.borneman@metutilities.com';
-
-    if (provider === 'share') {
-      navigator.share({ files: [csvFile, reportFile], title: subject, text: reportText }).catch(() => { });
+btnLoadNew.addEventListener('click', async () => {
+  const csvText = await fetchCSVFromSheets();
+  if (csvText) {
+    const records = parseCSV(csvText);
+    if (records.length && records[0].hasOwnProperty('Street Address')) {
+      showToast('Work orders reloaded from Google Sheets');
+      applyNewCSV(records, false);
       return;
     }
+  }
+  csvReloadInput.click(); // fall back to file picker
+});
 
-    // Download both files before opening the compose window
-    [csvFile, reportFile].forEach(f => {
-      const url = URL.createObjectURL(f);
-      const a = document.createElement('a');
-      a.href = url; a.download = f.name;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+detailClose.addEventListener('click', closeDetailSheet);
 
-    const to = encodeURIComponent(recipients);
-    const su = encodeURIComponent(subject);
-    const body = encodeURIComponent(reportText + '\n\n(See attached CSV for full reading data.)');
+// Tap outside detail sheet to close
+viewMap.addEventListener('click', (e) => {
+  if (sheetJustOpened) return;
+  if (!detailSheet.classList.contains('hidden') && !detailSheet.contains(e.target)) {
+    closeDetailSheet();
+  }
+});
 
-    const urls = {
-      gmail: `https://mail.google.com/mail/?view=cm&to=${to}&su=${su}&body=${body}`,
-      yahoo: `https://compose.mail.yahoo.com/?to=${to}&subject=${su}&body=${body}`,
-      outlook: `https://outlook.live.com/mail/deeplink/compose?to=${to}&subject=${su}&body=${body}`,
-    };
+engineerFilterSel.addEventListener('change', () => {
+  placeMarkers(getFilteredPoints(), false);
+  updateBadge();
+  updateStatusBar();
+});
 
-    setTimeout(() => {
-      if (urls[provider]) {
-        window.open(urls[provider], '_blank');
+btnDueToday.addEventListener('click', () => {
+  dueTodayActive = !dueTodayActive;
+  btnDueToday.classList.toggle('active', dueTodayActive);
+  placeMarkers(getFilteredPoints(), false);
+  updateBadge();
+  updateStatusBar();
+});
+
+btnMapStyle.addEventListener('click', e => {
+  e.stopPropagation();
+  mapStyleMenu.querySelectorAll('[data-style]').forEach(i =>
+    i.classList.toggle('active', i.dataset.style === mapStyle));
+  mapStyleMenu.classList.toggle('hidden');
+});
+
+mapStyleMenu.querySelectorAll('[data-style]').forEach(item => {
+  item.addEventListener('click', e => {
+    e.stopPropagation();
+    const style = item.dataset.style;
+    applyTileTheme(style);
+    localStorage.setItem(MAP_STYLE_KEY, style);
+    mapStyleMenu.classList.add('hidden');
+  });
+});
+
+document.addEventListener('click', () => mapStyleMenu.classList.add('hidden'));
+
+btnMergeKeep.addEventListener('click', () => {
+  mergeModal.classList.add('hidden');
+  applyNewCSV(pendingRecords, true);
+  pendingRecords = null;
+});
+
+btnMergeFresh.addEventListener('click', () => {
+  mergeModal.classList.add('hidden');
+  applyNewCSV(pendingRecords, false);
+  pendingRecords = null;
+});
+
+btnFixAddresses.addEventListener('click', showGeocodeFix);
+geocodeFixClose.addEventListener('click', () => geocodeFixModal.classList.add('hidden'));
+overdueDismiss.addEventListener('click', () => overdueWarning.classList.add('hidden'));
+
+detailNavLink.addEventListener('click', (e) => {
+  if (activeRow && isRedLock(activeRow) && isLockEndPast(activeRow)) {
+    e.preventDefault();
+    const tf = (activeRow['targetfinish'] || '').trim();
+    overdueText.textContent = `⚠ Lock end date has passed (${tf})`;
+    overdueWarning.classList.remove('hidden');
+  }
+});
+
+btnComplete.addEventListener('click', () => {
+  if (!activeRow) return;
+  const wo = (activeRow['Workorder'] || '').trim();
+  if (!wo) return;
+
+  if (completions[wo]) {
+    // Undo
+    delete completions[wo];
+    saveCompletions();
+    refreshMarkerIcon(wo);
+    btnComplete.classList.remove('done');
+    btnComplete.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/></svg> Complete`;
+  } else {
+    // Mark complete
+    completions[wo] = { date: new Date().toLocaleString('en-CA') };
+    saveCompletions();
+    refreshMarkerIcon(wo);
+    btnComplete.classList.add('done');
+    btnComplete.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/></svg> Completed`;
+    showToast('Work order completed');
+  }
+  updateStatusBar();
+});
+
+// ── Boot ──────────────────────────────────────
+function boot() {
+  completions = loadCompletions();
+
+  // Hide splash after letter animation sequence completes (~4.3s)
+  setTimeout(() => {
+    splash.style.transition = 'opacity 0.4s';
+    splash.style.opacity = '0';
+    setTimeout(() => splash.remove(), 400);
+
+    // Always try Google Sheets first so engineers see fresh data every time
+    fetchCSVFromSheets().then(csvText => {
+      if (csvText) {
+        const records = parseCSV(csvText);
+        if (records.length && records[0].hasOwnProperty('Street Address')) {
+          showToast('Work orders loaded from Google Sheets');
+          applyNewCSV(records, false);
+          return;
+        }
+      }
+
+      // Sheets not configured or fetch failed — fall back to session restore
+      const savedEngineer = localStorage.getItem(ENGINEER_KEY) || '';
+      const hasSession = tryRestoreSession();
+
+      if (hasSession && savedEngineer) {
+        selectedEngineer = savedEngineer;
+        showMapView();
+        const myJobs = workOrders.filter(r => (r['engineer'] || '').trim() === savedEngineer);
+        woCountBadge.textContent = `${myJobs.length} job${myJobs.length !== 1 ? 's' : ''}`;
+
+        // Restore saved points — wait for Leaflet to size itself first
+        const savedPoints = loadPoints();
+        setTimeout(() => {
+          if (savedPoints.length) {
+            geocodedPoints = savedPoints;
+            placeMarkers(getFilteredPoints(), true);
+            updateBadge();
+            updateStatusBar();
+            updateNotFoundBar();
+          } else {
+            // No saved points (e.g. crash during geocoding) — re-geocode from cache
+            geocodeAllRecords(() => { }).then(({ points, failures }) => {
+              geocodedPoints = points;
+              geocodeFailures = failures;
+              if (points.length) savePoints();
+              placeMarkers(getFilteredPoints(), true);
+              updateBadge();
+              updateStatusBar();
+              updateNotFoundBar();
+            });
+          }
+        }, 150);
+      } else if (hasSession) {
+        // CSV loaded but no engineer saved — show picker
+        showEngineerView();
       } else {
-        // Default mail client via mailto:
-        window.location.href = `mailto:${recipients ? encodeURIComponent(recipients) : ''}?subject=${su}&body=${body}`;
+        showHomeView();
       }
-    }, 400);
-  }
-
-  document.getElementById('email-provider-cancel').addEventListener('click', () => {
-    emailProviderModal.classList.add('hidden');
-    pendingEmailBundle = null;
-  });
-  document.getElementById('email-provider-share').addEventListener('click', () => doEmailWithProvider('share'));
-  ['gmail', 'yahoo', 'outlook', 'mailto'].forEach(p =>
-    document.getElementById(`epm-${p}`).addEventListener('click', () => doEmailWithProvider(p))
-  );
-
-  // ─── Toast ────────────────────────────────────────
-  function showToast(msg, isError = false) {
-    toast.textContent = msg;
-    toast.classList.toggle('toast-error', isError);
-    toast.classList.remove('hidden');
-    toast.classList.add('show');
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.classList.add('hidden'), 300);
-    }, isError ? 4000 : 3000);
-  }
-
-  // ─── Helpers ──────────────────────────────────────
-  function esc(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  // ─── Splash Animation ──────────────────────────────
-  function runSplashAnimation(onDone) {
-    [
-      { id: 'spl-m', delay: 150 },
-      { id: 'spl-e', delay: 350 },
-      { id: 'spl-t', delay: 550 },
-    ].forEach(({ id, delay }) => {
-      setTimeout(() => { document.getElementById(id).classList.add('visible'); }, delay);
     });
-    // Spin OUTS
-    setTimeout(() => {
-      const outs = document.getElementById('spl-outs');
-      outs.classList.add('spin');
-      // After spin (650ms) + 300ms pause → explode
-      setTimeout(() => {
-        outs.classList.remove('spin');
-        void outs.offsetWidth; // flush animation state
-        outs.classList.add('explode');
-        setTimeout(onDone, 450); // explode (400ms) + 50ms buffer
-      }, 650 + 300);
-    }, 800);
-  }
+  }, 4300);
+}
 
-  // ─── Boot ─────────────────────────────────────────
-  function boot() {
-    bundleRates = loadBundleRates();
-    loadSentState();
-    loadDeletedBundles();
-    try {
-      const saved = localStorage.getItem(READER_KEY);
-      if (saved) setReaderName(saved);
-    } catch (_) { }
-    // Restore any previously saved records
-    const restored = loadRecordsBackup();
+boot();
 
-    // Run splash animation, then transition to home
-    runSplashAnimation(() => {
-      viewSplash.classList.add('hidden');
-      viewHome.classList.remove('hidden');
-      renderHome();
-      checkDailyBackup();
-      updateRecoverBar();
-      if (restored) showToast(`Session restored — ${allRecords.length} records loaded`);
-    });
-
-    // Register service worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(() => { });
-    }
-  }
-
-  boot();
-
-})();
+// ── Service worker registration ───────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => { });
+}
