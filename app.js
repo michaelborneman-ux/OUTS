@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v5.1';
+  const APP_VERSION = 'v5.2';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -43,6 +43,7 @@
   let bdShowMissed = false;  // bundle list filter: unread cards
   let bdShowSkipped = false;  // bundle list filter: skipped cards
   let backupBarShown = false;  // session flag — show daily backup bar only once
+  let autoSaveTimer = null;   // debounce handle for silent CSV auto-save
 
   // ─── DOM refs ─────────────────────────────────────
   const viewSplash = document.getElementById('view-splash');
@@ -260,6 +261,13 @@
   const BACKUP_DATE_KEY = 'mtr_last_backup_date';
   const TWO_WEEKS = 14 * 24 * 60 * 60 * 1000;
 
+  // ─── Auto-backup (File System Access API) ─────────
+  const IDB_NAME = 'mtr_fs';
+  const IDB_VERSION = 1;
+  const IDB_STORE = 'handles';
+  const HANDLE_KEY = 'backupDir';
+  const AUTO_BACKUP_INDICATOR_KEY = 'mtr_auto_backup_active';
+
   let deletedBundles = [];  // [{ key, bundleName, rows, deletedAt }]
 
   function loadSentState() {
@@ -297,6 +305,7 @@
     try {
       localStorage.setItem(RECORDS_KEY, JSON.stringify(allRecords));
     } catch (_) { }
+    scheduleAutoSave();
   }
 
   function loadRecordsBackup() {
@@ -309,6 +318,52 @@
       bundles = groupIntoBundles(allRecords);
       return true;
     } catch (_) { return false; }
+  }
+
+  // ─── IndexedDB helpers (for FileSystemDirectoryHandle storage) ────
+  function openHandleDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+      req.onupgradeneeded = (e) => { e.target.result.createObjectStore(IDB_STORE); };
+      req.onsuccess = (e) => resolve(e.target.result);
+      req.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  async function saveDirectoryHandle(handle) {
+    try {
+      const db = await openHandleDB();
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(handle, HANDLE_KEY);
+      return new Promise((resolve, reject) => {
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = (e) => { db.close(); reject(e.target.error); };
+      });
+    } catch (_) { }
+  }
+
+  async function loadDirectoryHandle() {
+    try {
+      const db = await openHandleDB();
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(HANDLE_KEY);
+      return new Promise((resolve, reject) => {
+        req.onsuccess = () => { db.close(); resolve(req.result || null); };
+        req.onerror = (e) => { db.close(); reject(e.target.error); };
+      });
+    } catch (_) { return null; }
+  }
+
+  async function clearDirectoryHandle() {
+    try {
+      const db = await openHandleDB();
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).delete(HANDLE_KEY);
+      return new Promise((resolve) => {
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); resolve(); };
+      });
+    } catch (_) { }
   }
 
   // ─── Geocoding ────────────────────────────────────
@@ -1824,6 +1879,115 @@
     return lines.join('\r\n');
   }
 
+  // ─── Auto-backup: silent write to authorized folder ───
+
+  async function writeCSVToFolder(handle) {
+    if (!allRecords.length) return;
+    const csv = buildAllRecordsCSV();
+    if (!csv) return;
+    const dateStr = new Date().toLocaleDateString('en-CA');
+    try {
+      const fileHandle = await handle.getFileHandle(`meter-backup-${dateStr}.csv`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(csv);
+      await writable.close();
+      try { localStorage.setItem(BACKUP_DATE_KEY, dateStr); } catch (_) { }
+      const bar = bundleList.querySelector('.backup-bar');
+      if (bar) bar.remove();
+    } catch (err) {
+      if (err.name === 'NotAllowedError') {
+        await clearDirectoryHandle();
+        try { localStorage.removeItem(AUTO_BACKUP_INDICATOR_KEY); } catch (_) { }
+        checkDailyBackup();
+      }
+    }
+  }
+
+  function scheduleAutoSave() {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(async () => {
+      let handle;
+      try { handle = await loadDirectoryHandle(); } catch (_) { return; }
+      if (!handle) return;
+      let perm;
+      try { perm = await handle.queryPermission({ mode: 'readwrite' }); } catch (_) { perm = 'denied'; }
+      if (perm === 'granted') {
+        await writeCSVToFolder(handle);
+      } else {
+        await clearDirectoryHandle();
+        try { localStorage.removeItem(AUTO_BACKUP_INDICATOR_KEY); } catch (_) { }
+        updateBackupBarUI();
+        checkDailyBackup();
+      }
+    }, 2000);
+  }
+
+  async function chooseBackupFolder() {
+    if (!window.showDirectoryPicker) {
+      showToast('Auto-backup not supported in this browser');
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await saveDirectoryHandle(handle);
+      try { localStorage.setItem(AUTO_BACKUP_INDICATOR_KEY, '1'); } catch (_) { }
+      showToast('Auto-backup folder set — backups will save silently');
+      updateBackupBarUI();
+      await writeCSVToFolder(handle);
+    } catch (err) {
+      if (err.name !== 'AbortError') showToast('Could not set backup folder');
+    }
+  }
+
+  function updateBackupBarUI() {
+    const existing = bundleList.querySelector('.backup-bar');
+    if (existing) existing.remove();
+    if (!allRecords.length) return;
+
+    let isAutoActive = false;
+    try { isAutoActive = !!localStorage.getItem(AUTO_BACKUP_INDICATOR_KEY); } catch (_) { }
+
+    if (isAutoActive) {
+      const bar = document.createElement('div');
+      bar.className = 'backup-bar backup-bar--active';
+      bar.innerHTML = `
+        <span class="backup-active-dot"></span>
+        <span class="backup-active-label">Auto-backup active</span>
+        <button class="backup-change-btn" title="Change backup folder">Change folder</button>`;
+      bar.querySelector('.backup-change-btn').addEventListener('click', chooseBackupFolder);
+      bundleList.prepend(bar);
+      return;
+    }
+
+    // Show manual bar only if not already shown this session and not done today
+    if (backupBarShown) return;
+    const today = new Date().toLocaleDateString('en-CA');
+    try { if (localStorage.getItem(BACKUP_DATE_KEY) === today) return; } catch (_) { }
+    backupBarShown = true;
+    const bar = document.createElement('div');
+    bar.className = 'backup-bar';
+    bar.innerHTML = `
+      <button class="backup-save-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Save Daily Backup
+      </button>
+      <button class="backup-folder-btn" title="Set auto-backup folder">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        Auto
+      </button>
+      <button class="backup-dismiss-btn" title="Dismiss">✕</button>`;
+    bar.querySelector('.backup-save-btn').addEventListener('click', doBackupDownload);
+    bar.querySelector('.backup-folder-btn').addEventListener('click', chooseBackupFolder);
+    bar.querySelector('.backup-dismiss-btn').addEventListener('click', () => bar.remove());
+    bundleList.prepend(bar);
+  }
+
   function doBackupDownload() {
     const csv = buildAllRecordsCSV();
     if (!csv) return;
@@ -1839,27 +2003,7 @@
   }
 
   function checkDailyBackup() {
-    if (backupBarShown || !allRecords.length) return;
-    const today = new Date().toLocaleDateString('en-CA');
-    try { if (localStorage.getItem(BACKUP_DATE_KEY) === today) return; } catch (_) { }
-    backupBarShown = true;
-    const existing = bundleList.querySelector('.backup-bar');
-    if (existing) existing.remove();
-    const bar = document.createElement('div');
-    bar.className = 'backup-bar';
-    bar.innerHTML = `
-      <button class="backup-save-btn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/>
-          <line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
-        Save Daily Backup
-      </button>
-      <button class="backup-dismiss-btn" title="Dismiss">✕</button>`;
-    bar.querySelector('.backup-save-btn').addEventListener('click', doBackupDownload);
-    bar.querySelector('.backup-dismiss-btn').addEventListener('click', () => bar.remove());
-    bundleList.prepend(bar);
+    updateBackupBarUI();
   }
 
   // ─── Email Provider Picker ────────────────────────
@@ -1981,6 +2125,32 @@
   }
 
   // ─── Boot ─────────────────────────────────────────
+  async function initAutoBackup() {
+    if (!allRecords.length) { checkDailyBackup(); return; }
+
+    let handle = null;
+    try { handle = await loadDirectoryHandle(); } catch (_) { }
+    if (!handle) { checkDailyBackup(); return; }
+
+    // queryPermission is non-prompting — safe to call outside a user gesture
+    let perm;
+    try { perm = await handle.queryPermission({ mode: 'readwrite' }); } catch (_) { perm = 'denied'; }
+
+    if (perm !== 'granted') {
+      await clearDirectoryHandle();
+      try { localStorage.removeItem(AUTO_BACKUP_INDICATOR_KEY); } catch (_) { }
+      checkDailyBackup();
+      return;
+    }
+
+    const today = new Date().toLocaleDateString('en-CA');
+    let doneToday = false;
+    try { doneToday = localStorage.getItem(BACKUP_DATE_KEY) === today; } catch (_) { }
+
+    if (!doneToday) await writeCSVToFolder(handle);
+    updateBackupBarUI();
+  }
+
   function boot() {
     bundleRates = loadBundleRates();
     loadSentState();
@@ -1997,7 +2167,7 @@
       viewSplash.classList.add('hidden');
       viewHome.classList.remove('hidden');
       renderHome();
-      checkDailyBackup();
+      initAutoBackup();
       updateRecoverBar();
       if (restored) showToast(`Session restored — ${allRecords.length} records loaded`);
     });
