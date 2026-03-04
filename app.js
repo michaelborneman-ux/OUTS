@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v5.2';
+  const APP_VERSION = 'v5.3';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -1883,9 +1883,11 @@
 
   async function writeCSVToFolder(handle) {
     if (!allRecords.length) return;
+    const dateStr = new Date().toLocaleDateString('en-CA');
+    // Write-once per day — never overwrite an existing daily backup
+    try { if (localStorage.getItem(BACKUP_DATE_KEY) === dateStr) return; } catch (_) { }
     const csv = buildAllRecordsCSV();
     if (!csv) return;
-    const dateStr = new Date().toLocaleDateString('en-CA');
     try {
       const fileHandle = await handle.getFileHandle(`meter-backup-${dateStr}.csv`, { create: true });
       const writable = await fileHandle.createWritable();
@@ -1906,6 +1908,9 @@
   function scheduleAutoSave() {
     clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(async () => {
+      // Skip IDB lookup entirely if today's backup is already written
+      const today = new Date().toLocaleDateString('en-CA');
+      try { if (localStorage.getItem(BACKUP_DATE_KEY) === today) return; } catch (_) { }
       let handle;
       try { handle = await loadDirectoryHandle(); } catch (_) { return; }
       if (!handle) return;
