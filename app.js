@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v5.3';
+  const APP_VERSION = 'v5.4';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -395,8 +395,10 @@
 
     // Remove unit/suite/lot qualifiers from the street name.
     // Handles: "MAIN ST SUITE 200", "OAK AVE, APT 3", "ELM RD LOT B"
+    // Also strips floor/level descriptors: "FLOOR 1-6", "FLOOR MAIN", "MAIN FLR", "BASEMENT"
     const cleanStreet = street
       .replace(/[,\s]*(unit|apt|apartment|suite|ste|lot|rm|room)\s*\S*/gi, '')
+      .replace(/[,\s]*(floor\s+(?:[1-6]|main)|main\s+flr|basement)\b/gi, '')
       .trim();
 
     return { cleanNum, cleanStreet };
