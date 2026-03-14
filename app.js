@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v5.6';
+  const APP_VERSION = 'v5.7';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -305,7 +305,19 @@
     try {
       localStorage.setItem(RECORDS_KEY, JSON.stringify(allRecords));
     } catch (_) { }
+    saveToOPFS(buildAllRecordsCSV());
     scheduleAutoSave();
+  }
+
+  function saveToOPFS(csv) {
+    if (!navigator.storage || !navigator.storage.getDirectory) return;
+    navigator.storage.getDirectory().then(function (dir) {
+      return dir.getFileHandle('meter-backup.csv', { create: true });
+    }).then(function (fh) {
+      return fh.createWritable();
+    }).then(function (writable) {
+      return writable.write(csv).then(function () { return writable.close(); });
+    }).catch(function () { /* silent — data already safe in localStorage */ });
   }
 
   function loadRecordsBackup() {
