@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v5.4';
+  const APP_VERSION = 'v5.5';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -847,6 +847,11 @@
       headers.forEach((h, i) => {
         obj[h.trim()] = (vals[i] || '').replace(/^"|"$/g, '').trim();
       });
+      // Strip trailing ".0" from the address number — Excel/spreadsheets
+      // sometimes export integer columns as floats (e.g. "123.0" → "123")
+      if (obj['#'] && /^\d+\.0$/.test(obj['#'])) {
+        obj['#'] = obj['#'].replace(/\.0$/, '');
+      }
       return obj;
     });
   }
