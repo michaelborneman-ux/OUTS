@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v5.8';
+  const APP_VERSION = 'v5.9';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -428,15 +428,9 @@
   async function saveCSVToDisk(csv) {
     if (!csv) return;
 
-    // iOS / unsupported browsers: fall back to a plain download
+    // iOS / unsupported browsers: save silently to OPFS
     if (!window.showSaveFilePicker) {
-      const date = new Date().toISOString().slice(0, 10);
-      const a = document.createElement('a');
-      a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-      a.download = 'meter-readings-' + date + '.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      saveToOPFS(csv);
       return;
     }
 
