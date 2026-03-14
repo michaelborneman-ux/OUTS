@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v5.7';
+  const APP_VERSION = 'v5.8';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -266,6 +266,7 @@
   const IDB_VERSION = 1;
   const IDB_STORE = 'handles';
   const HANDLE_KEY = 'backupDir';
+  const CSV_FILE_KEY = 'csvFile';
   const AUTO_BACKUP_INDICATOR_KEY = 'mtr_auto_backup_active';
 
   let deletedBundles = [];  // [{ key, bundleName, rows, deletedAt }]
@@ -305,7 +306,9 @@
     try {
       localStorage.setItem(RECORDS_KEY, JSON.stringify(allRecords));
     } catch (_) { }
-    saveToOPFS(buildAllRecordsCSV());
+    const csv = buildAllRecordsCSV();
+    saveToOPFS(csv);
+    saveCSVToDisk(csv);
     scheduleAutoSave();
   }
 
@@ -376,6 +379,97 @@
         tx.onerror = () => { db.close(); resolve(); };
       });
     } catch (_) { }
+  }
+
+  // ─── CSV file handle (persists across sessions via IDB) ──────────────────
+
+  async function saveCsvFileHandle(handle) {
+    try {
+      const db = await openHandleDB();
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(handle, CSV_FILE_KEY);
+      return new Promise((resolve, reject) => {
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = (e) => { db.close(); reject(e.target.error); };
+      });
+    } catch (_) { }
+  }
+
+  async function loadCsvFileHandle() {
+    try {
+      const db = await openHandleDB();
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(CSV_FILE_KEY);
+      return new Promise((resolve, reject) => {
+        req.onsuccess = () => { db.close(); resolve(req.result || null); };
+        req.onerror = (e) => { db.close(); reject(e.target.error); };
+      });
+    } catch (_) { return null; }
+  }
+
+  async function clearCsvFileHandle() {
+    try {
+      const db = await openHandleDB();
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).delete(CSV_FILE_KEY);
+      return new Promise((resolve) => {
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); resolve(); };
+      });
+    } catch (_) { }
+  }
+
+  async function writeCsvToFileHandle(handle, csv) {
+    const writable = await handle.createWritable();
+    await writable.write(csv);
+    await writable.close();
+  }
+
+  async function saveCSVToDisk(csv) {
+    if (!csv) return;
+
+    // iOS / unsupported browsers: fall back to a plain download
+    if (!window.showSaveFilePicker) {
+      const date = new Date().toISOString().slice(0, 10);
+      const a = document.createElement('a');
+      a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+      a.download = 'meter-readings-' + date + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+
+    let handle = await loadCsvFileHandle();
+
+    if (handle) {
+      let perm = 'prompt';
+      try { perm = await handle.queryPermission({ mode: 'readwrite' }); } catch (_) { perm = 'denied'; }
+      if (perm === 'prompt') {
+        try { perm = await handle.requestPermission({ mode: 'readwrite' }); } catch (_) { perm = 'denied'; }
+      }
+      if (perm === 'granted') {
+        try {
+          await writeCsvToFileHandle(handle, csv);
+          return;
+        } catch (_) {
+          // Handle went stale — fall through to pick a new file
+          await clearCsvFileHandle();
+        }
+      } else {
+        await clearCsvFileHandle();
+      }
+    }
+
+    // No valid handle — show the file picker (one-time setup)
+    try {
+      handle = await window.showSaveFilePicker({
+        suggestedName: 'meter-readings.csv',
+        types: [{ description: 'CSV file', accept: { 'text/csv': ['.csv'] } }]
+      });
+      await saveCsvFileHandle(handle);
+      await writeCsvToFileHandle(handle, csv);
+    } catch (_) { /* user cancelled */ }
   }
 
   // ─── Geocoding ────────────────────────────────────
