@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v6.3';
+  const APP_VERSION = 'v6.4';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -36,6 +36,7 @@
   let geocodedPoints = [];     // cached results — reused on subsequent map opens
   let geocodeFailures = [];     // records that could not be geocoded
   let geocodeStale = false;  // set by forceGeocodeBundle — forces re-geocode on next map open
+  let pendingFixPoint = null; // { row, bundle, marker, lat, lng } — set when Fix Location is tapped
   let userLocationMarker = null;  // L.marker for the user's GPS position
   let gpsAutoStopTimer = null;
   let gpsWatching = false;
@@ -622,7 +623,7 @@
   }
 
   // Single tap → briefly show popup. Double tap → open data entry.
-  function attachMarkerTapHandlers(marker, row, bundle) {
+  function attachMarkerTapHandlers(marker, row, bundle, lat, lng) {
     let tapTimer = null;
     marker.on('click', () => {
       if (tapTimer) {
@@ -633,6 +634,7 @@
         showBundleDetail(bundle);
         showCardDetail(row, bundle, 'map');
       } else {
+        pendingFixPoint = { row, bundle, marker, lat, lng };
         marker.openPopup();
         tapTimer = setTimeout(() => { tapTimer = null; }, 300);
         setTimeout(() => marker.closePopup(), 2500);
@@ -651,11 +653,11 @@
       const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
       const loc = (row['LOC'] || '').trim();
       const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-      const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a>`;
+      const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a><br><a href="#" class="popup-nav-link" onclick="window._openFixLocation();return false;">&#9999; Fix Location</a>`;
       const marker = L.marker([lat, lng], { icon })
         .addTo(leafletMap)
         .bindPopup(popup, { autoClose: false, closeOnClick: false });
-      attachMarkerTapHandlers(marker, row, bundle);
+      attachMarkerTapHandlers(marker, row, bundle, lat, lng);
       mapMarkers.push({ marker, row, bundle });
       bounds.push([lat, lng]);
     });
@@ -1376,6 +1378,7 @@
     const fmtRate = (r) => r != null ? `$${r.toFixed(2)}` : '—';
     const today = new Date().toLocaleDateString('en-CA');
     const issuedDate = rates?.issuedDate || today;
+    const dueDate = rates?.dueDate || '';
     const routeStr = bundle.mruIds.length
       ? `A${bundle.mruArea} – ${bundle.routeNums.join(', ')}`
       : '—';
@@ -1402,8 +1405,8 @@
           <span class="report-info-value">${esc(bundle.mruCycle)}</span>
         </div>
         <div class="report-info-item">
-          <span class="report-info-label">Issued Date</span>
-          <span class="report-info-value">${issuedDate}</span>
+          <span class="report-info-label">Issued / Due Date</span>
+          <span class="report-info-value">${issuedDate} / ${dueDate || '—'}</span>
         </div>
         <div class="report-info-item">
           <span class="report-info-label">Route #</span>
@@ -1581,7 +1584,16 @@
     geocodedPoints = [];  // reset so map re-geocodes with new addresses
     if (rates) {
       const issuedDate = new Date().toLocaleDateString('en-CA');
-      getNewBundleKeys(records).forEach(key => { bundleRates[key] = { ...rates, issuedDate }; });
+      const hasBundle = records.some(r => (r['Bundle'] || '').trim() !== '');
+      getNewBundleKeys(records).forEach(key => {
+        const rec = records.find(r =>
+          (hasBundle
+            ? ((r['Bundle'] || '').trim() || (r['City'] || '').trim() || 'Unknown')
+            : ((r['City'] || '').trim() || 'Unknown')) === key
+        );
+        const dueDate = (rec?.['DUE_DATE'] || '').trim();
+        bundleRates[key] = { ...rates, issuedDate, dueDate };
+      });
       saveBundleRates();
     }
     renderHome();
@@ -1837,6 +1849,7 @@
     const fmtRate = (r) => r != null ? `$${r.toFixed(2)}` : '—';
     const today = new Date().toLocaleDateString('en-CA');
     const issuedDate = rates?.issuedDate || today;
+    const dueDate = rates?.dueDate || '';
     const routeStr = bundle.mruIds.length
       ? `A${bundle.mruArea} – ${bundle.routeNums.join(', ')}`
       : '—';
@@ -1852,6 +1865,7 @@
       '',
       `Cycle:        ${bundle.mruCycle}`,
       `Issued Date:  ${issuedDate}`,
+      `Due Date:     ${dueDate || '—'}`,
       `Route #:      ${routeStr}`,
       `City / Route: ${bundle.city || bundle.bundleName}`,
       `Total Issued: ${bundle.total}`,
@@ -2128,6 +2142,95 @@
     document.getElementById(`epm-${p}`).addEventListener('click', () => doEmailWithProvider(p))
   );
 
+  // ─── Fix Location Modal ───────────────────────────
+  const fixLocModal = document.getElementById('fix-location-modal');
+  const fixLocLat = document.getElementById('fix-loc-lat');
+  const fixLocLng = document.getElementById('fix-loc-lng');
+
+  window._openFixLocation = () => {
+    if (!pendingFixPoint) return;
+    fixLocLat.value = pendingFixPoint.lat;
+    fixLocLng.value = pendingFixPoint.lng;
+    pendingFixPoint.marker.closePopup();
+    fixLocModal.classList.remove('hidden');
+    fixLocLat.focus();
+  };
+
+  document.getElementById('fix-loc-cancel').addEventListener('click', () => {
+    fixLocModal.classList.add('hidden');
+  });
+
+  document.getElementById('fix-loc-confirm').addEventListener('click', () => {
+    const lat = parseFloat(fixLocLat.value);
+    const lng = parseFloat(fixLocLng.value);
+    if (isNaN(lat) || isNaN(lng)) { showToast('Enter valid coordinates.', true); return; }
+
+    const { row, bundle, marker } = pendingFixPoint;
+    const mapAddress = (row['Map Address'] || '').trim();
+    const num = (row['#'] || '').trim().replace(/\.0$/, '');
+    const street = (row['STREET'] || '').trim();
+    const city = (row['City'] || '').trim();
+    const cacheKey = mapAddress
+      ? mapAddress.toLowerCase()
+      : `${num} ${street},${city}`.trim().toLowerCase();
+
+    const cache = loadGeoCache();
+    cache[cacheKey] = { lat, lng };
+    saveGeoCache(cache);
+
+    // Update geocodedPoints in-place
+    const pt = geocodedPoints.find(p => p.row === row);
+    if (pt) { pt.lat = lat; pt.lng = lng; }
+
+    // Move the marker
+    marker.setLatLng([lat, lng]);
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
+    const loc = (row['LOC'] || '').trim();
+    marker.setPopupContent(`<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a><br><a href="#" class="popup-nav-link" onclick="window._openFixLocation();return false;">&#9999; Fix Location</a>`);
+
+    fixLocModal.classList.add('hidden');
+    pendingFixPoint = null;
+    showToast('Location updated.');
+  });
+
+  // ─── Due Date Warning ─────────────────────────────
+  const dueWarningModal = document.getElementById('due-warning-modal');
+  const dueWarningDesc = document.getElementById('due-warning-desc');
+  document.getElementById('due-warning-ok').addEventListener('click', () =>
+    dueWarningModal.classList.add('hidden')
+  );
+
+  function checkDueDateWarnings() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const warnings = bundles.filter(b => {
+      if (sentBundles.has(b.key)) return false;
+      const dueDate = (bundleRates[b.key]?.dueDate || '').trim();
+      if (!dueDate) return false;
+      const due = new Date(dueDate);
+      due.setHours(0, 0, 0, 0);
+      return due <= tomorrow;
+    });
+
+    if (!warnings.length) return;
+
+    const lines = warnings.map(b => {
+      const dueDate = bundleRates[b.key]?.dueDate || '';
+      const due = new Date(dueDate);
+      due.setHours(0, 0, 0, 0);
+      const todayMs = new Date(); todayMs.setHours(0, 0, 0, 0);
+      const status = due < todayMs ? 'Overdue' : due.getTime() === todayMs.getTime() ? 'Due today' : 'Due tomorrow';
+      return `• ${b.bundleName} — ${status} (${dueDate})`;
+    });
+
+    dueWarningDesc.textContent = lines.join('\n');
+    dueWarningModal.classList.remove('hidden');
+  }
+
   // ─── Toast ────────────────────────────────────────
   function showToast(msg, isError = false) {
     toast.textContent = msg;
@@ -2219,6 +2322,7 @@
       renderHome();
       initAutoBackup();
       updateRecoverBar();
+      checkDueDateWarnings();
       if (restored) showToast(`Session restored — ${allRecords.length} records loaded`);
     });
 

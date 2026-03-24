@@ -699,6 +699,43 @@
   <!-- Toast -->
   <div class="toast hidden" id="toast"></div>
 
+  <!-- Fix Location Modal -->
+  <div id="fix-location-modal" class="modal-overlay hidden">
+    <div class="modal-sheet">
+      <h2 class="modal-title">Fix Location</h2>
+      <p class="modal-desc">Enter the correct coordinates for this address.</p>
+      <div class="rate-rows">
+        <div class="rate-row">
+          <span class="rate-row-label">Latitude</span>
+          <div class="rate-input-wrap">
+            <input id="fix-loc-lat" type="number" step="any" class="rate-input" placeholder="e.g. 43.6532" inputmode="decimal" />
+          </div>
+        </div>
+        <div class="rate-row">
+          <span class="rate-row-label">Longitude</span>
+          <div class="rate-input-wrap">
+            <input id="fix-loc-lng" type="number" step="any" class="rate-input" placeholder="e.g. -79.3832" inputmode="decimal" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-cancel" id="fix-loc-cancel">Cancel</button>
+        <button class="modal-confirm" id="fix-loc-confirm">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Due Date Warning Modal -->
+  <div id="due-warning-modal" class="modal-overlay hidden">
+    <div class="modal-sheet">
+      <h2 class="modal-title">Bundle Due Soon</h2>
+      <p id="due-warning-desc" class="modal-desc"></p>
+      <div class="modal-actions">
+        <button class="modal-cancel" id="due-warning-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
