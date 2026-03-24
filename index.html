@@ -29,6 +29,27 @@
   </div>
 
   <!-- ═══════════════════════════════════════════════ -->
+  <!-- PIN LOCK VIEW                                   -->
+  <!-- ═══════════════════════════════════════════════ -->
+  <div id="view-pin" class="view hidden">
+    <div class="splash-inner">
+      <div class="splash-logo">
+        <span class="logo-letter visible">M</span>
+        <span class="logo-letter visible">E</span>
+        <span class="logo-letter visible">T</span>
+        <span class="logo-outs" style="opacity:1">OUTS</span>
+      </div>
+      <div class="pin-entry">
+        <input type="password" id="pin-input" inputmode="numeric"
+               pattern="[0-9]*" maxlength="10"
+               placeholder="Enter PIN" autocomplete="off" />
+        <button id="pin-unlock-btn" class="pin-unlock-btn">Unlock</button>
+        <p id="pin-error" class="pin-error hidden">Incorrect PIN — try again.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════ -->
   <!-- HOME VIEW — Bundle List                         -->
   <!-- ═══════════════════════════════════════════════ -->
   <div id="view-home" class="view hidden">

@@ -84,6 +84,48 @@ html, body {
   display: none !important;
 }
 
+/* ─── PIN Lock ──────────────────────────────────── */
+.pin-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.pin-entry input {
+  width: 180px;
+  padding: 12px 16px;
+  font-size: 1.2rem;
+  text-align: center;
+  letter-spacing: 0.2em;
+  border: 2px solid var(--divider);
+  border-radius: 12px;
+  background: #fff;
+  outline: none;
+}
+
+.pin-entry input:focus {
+  border-color: var(--accent);
+}
+
+.pin-unlock-btn {
+  padding: 11px 36px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.pin-error {
+  font-size: 0.85rem;
+  color: #dc2626;
+  margin: 0;
+}
+
 /* ─── Splash Screen ─────────────────────────────── */
 .view#view-splash {
   background: #fff;

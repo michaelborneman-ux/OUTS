@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v6.4';
+  const APP_VERSION = 'v6.5';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -46,8 +46,22 @@
   let backupBarShown = false;  // session flag — show daily backup bar only once
   let autoSaveTimer = null;   // debounce handle for silent CSV auto-save
 
+  // ─── PIN lock ─────────────────────────────────────
+  const APP_PIN = '4959';
+  const PIN_KEY = 'outs_pin_unlocked';
+
+  function isPinUnlocked() {
+    const today = new Date().toLocaleDateString('en-CA');
+    return localStorage.getItem(PIN_KEY) === today;
+  }
+
+  function unlockPin() {
+    localStorage.setItem(PIN_KEY, new Date().toLocaleDateString('en-CA'));
+  }
+
   // ─── DOM refs ─────────────────────────────────────
   const viewSplash = document.getElementById('view-splash');
+  const viewPin = document.getElementById('view-pin');
   const viewHome = document.getElementById('view-home');
   const viewBundle = document.getElementById('view-bundle');
   const viewTotals = document.getElementById('view-totals');
@@ -2142,6 +2156,31 @@
     document.getElementById(`epm-${p}`).addEventListener('click', () => doEmailWithProvider(p))
   );
 
+  // ─── PIN unlock handler ───────────────────────────
+  const pinInput = document.getElementById('pin-input');
+  const pinError = document.getElementById('pin-error');
+  const pinUnlockBtn = document.getElementById('pin-unlock-btn');
+
+  function tryUnlockPin() {
+    if (pinInput.value === APP_PIN) {
+      unlockPin();
+      viewPin.classList.add('hidden');
+      viewHome.classList.remove('hidden');
+      renderHome();
+      initAutoBackup();
+      updateRecoverBar();
+      checkDueDateWarnings();
+      if (restored) showToast(`Session restored — ${allRecords.length} records loaded`);
+    } else {
+      pinError.classList.remove('hidden');
+      pinInput.value = '';
+      pinInput.focus();
+    }
+  }
+
+  pinUnlockBtn.addEventListener('click', tryUnlockPin);
+  pinInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlockPin(); });
+
   // ─── Fix Location Modal ───────────────────────────
   const fixLocModal = document.getElementById('fix-location-modal');
   const fixLocLat = document.getElementById('fix-loc-lat');
@@ -2318,12 +2357,17 @@
     // Run splash animation, then transition to home
     runSplashAnimation(() => {
       viewSplash.classList.add('hidden');
-      viewHome.classList.remove('hidden');
-      renderHome();
-      initAutoBackup();
-      updateRecoverBar();
-      checkDueDateWarnings();
-      if (restored) showToast(`Session restored — ${allRecords.length} records loaded`);
+      if (!isPinUnlocked()) {
+        viewPin.classList.remove('hidden');
+        setTimeout(() => pinInput.focus(), 100);
+      } else {
+        viewHome.classList.remove('hidden');
+        renderHome();
+        initAutoBackup();
+        updateRecoverBar();
+        checkDueDateWarnings();
+        if (restored) showToast(`Session restored — ${allRecords.length} records loaded`);
+      }
     });
 
     // Register service worker
