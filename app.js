@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v6.1';
+  const APP_VERSION = 'v6.2';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -1798,7 +1798,17 @@
           dupDesc.textContent = `The bundle${dupKeys.length > 1 ? 's' : ''} "${names}" ${dupKeys.length > 1 ? 'have' : 'has'} already been loaded. Loading it again would double the cards.`;
           dupModal.classList.remove('hidden');
         } else {
-          showRateModal(incoming);
+          const first = incoming[0];
+          if (first.hasOwnProperty('RATE_3EST') && first.hasOwnProperty('RATE_46EST') && first.hasOwnProperty('RATE_7PEST')) {
+            const rates = {
+              est3:  parseFloat(first['RATE_3EST'])  || 0,
+              est46: parseFloat(first['RATE_46EST']) || 0,
+              est7p: parseFloat(first['RATE_7PEST']) || 0,
+            };
+            commitLoad(incoming, rates);
+          } else {
+            showRateModal(incoming);
+          }
         }
 
         if (skipped) showToast(`${skipped} file${skipped > 1 ? 's' : ''} skipped — not a valid meter CSV`, true);
@@ -1856,7 +1866,10 @@
     // Collect headers: original keys + ensure SKIP / SKIP_OTHER / COMMENTS included
     const baseHeaders = Object.keys(rows[0]);
     const extra = ['SKIP', 'SKIP_OTHER', 'COMMENTS'].filter(k => !baseHeaders.includes(k));
-    const headers = [...baseHeaders, ...extra];
+    const allHeaders = [...baseHeaders, ...extra];
+    const FIRST_COLS = ['MTR SIZE', 'Serial No.', 'READ DATE', 'READING', 'COMMENTS'];
+    const headers = [...FIRST_COLS, ...allHeaders.filter(h => !FIRST_COLS.includes(h))];
+    const HEADER_RENAME = { 'MTR SIZE': 'MATERIAL_SIZE', 'Serial No.': 'MATERIAL_NO', 'READ DATE': 'DATE', 'COMMENTS': 'COMMENT' };
 
     function csvCell(val) {
       const s = (val == null ? '' : String(val));
@@ -1864,7 +1877,7 @@
         ? `"${s.replace(/"/g, '""')}"` : s;
     }
 
-    const lines = [headers.map(csvCell).join(',')];
+    const lines = [headers.map(h => csvCell(HEADER_RENAME[h] || h)).join(',')];
     for (const row of rows) {
       const skip = (row['SKIP'] || '').trim();
       const skipOther = (row['SKIP_OTHER'] || '').trim();
