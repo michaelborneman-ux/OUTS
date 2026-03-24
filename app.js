@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v6.2';
+  const APP_VERSION = 'v6.3';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -425,10 +425,12 @@
 
   // Returns Promise<{coords, count}>.
   // coords = {lat,lng} or null. count = number of real HTTP requests made.
-  // Tries full address first; falls back to street+city if that fails.
-  function geocodeAddress(num, street, city, cache) {
+  // Uses mapAddress directly if provided; otherwise builds from num/street/city with fallback.
+  function geocodeAddress(num, street, city, cache, mapAddress) {
     const { cleanNum, cleanStreet } = stripUnitInfo(num, street);
-    const key = `${cleanNum} ${cleanStreet},${city}`.trim().toLowerCase();
+    const key = mapAddress
+      ? mapAddress.trim().toLowerCase()
+      : `${cleanNum} ${cleanStreet},${city}`.trim().toLowerCase();
     if (cache[key]) return Promise.resolve({ coords: cache[key], count: 0 });
 
     const doFetch = (q) =>
@@ -437,6 +439,14 @@
         .then(r => r.json())
         .then(d => (d && d[0]) ? { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) } : null)
         .catch(() => null);
+
+    if (mapAddress) {
+      const stripped = mapAddress.replace(/\b[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d\b/, '').replace(/,?\s*$/, '').trim();
+      return doFetch(stripped || mapAddress).then(coords => {
+        if (coords) { cache[key] = coords; saveGeoCache(cache); }
+        return { coords, count: 1 };
+      });
+    }
 
     return doFetch(`${cleanNum} ${cleanStreet}, ${city}, Ontario`).then(coords => {
       if (coords) {
@@ -462,8 +472,9 @@
         const num = (row['#'] || '').trim();
         const street = (row['STREET'] || '').trim();
         const city = (row['City'] || '').trim();
-        if (!street || !city) return;
-        tasks.push({ row, bundle, num, street, city });
+        const mapAddress = (row['Map Address'] || '').trim();
+        if (!mapAddress && (!street || !city)) return;
+        tasks.push({ row, bundle, num, street, city, mapAddress });
       });
     });
     const results = [];
@@ -473,12 +484,12 @@
 
     function processNext(i) {
       if (i >= total) return Promise.resolve({ points: results, failures });
-      const { row, bundle, num, street, city } = tasks[i];
-      return geocodeAddress(num, street, city, cache).then(({ coords, count }) => {
+      const { row, bundle, num, street, city, mapAddress } = tasks[i];
+      return geocodeAddress(num, street, city, cache, mapAddress).then(({ coords, count }) => {
         doneCount++;
         progressCb(doneCount, total);
         if (coords) results.push({ lat: coords.lat, lng: coords.lng, row, bundle });
-        else failures.push({ row, bundle, num, street, city });
+        else failures.push({ row, bundle, num, street, city, mapAddress });
         // Wait 1050ms per real HTTP request made (0 for cache hits)
         const delay = count * 1050;
         return new Promise(res => setTimeout(res, delay)).then(() => processNext(i + 1));
@@ -762,11 +773,11 @@
   function showGeocodeFix() {
     geocodeFixList.innerHTML = '';
     geocodeFailures.forEach(f => {
-      const defaultQ = `${f.num ? f.num + ' ' : ''}${f.street}, ${f.city}, Ontario`;
+      const defaultQ = f.mapAddress || `${f.num ? f.num + ' ' : ''}${f.street}, ${f.city}, Ontario`;
       const item = document.createElement('div');
       item.className = 'geocode-fix-item';
       item.innerHTML = `
-        <div class="geocode-fix-addr">${esc((f.num ? f.num + ' ' : '') + f.street)}, ${esc(f.city)}</div>
+        <div class="geocode-fix-addr">${esc(f.mapAddress || (f.num ? f.num + ' ' : '') + f.street + ', ' + f.city)}</div>
         <div class="geocode-fix-row">
           <input type="text" class="geocode-fix-input" value="${esc(defaultQ)}">
           <button class="geocode-fix-btn">Retry</button>
@@ -799,7 +810,7 @@
             const coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
             // Cache under the original key
             const cache = loadGeoCache();
-            const key = `${f.num} ${f.street},${f.city}`.trim().toLowerCase();
+            const key = f.mapAddress ? f.mapAddress.trim().toLowerCase() : `${f.num} ${f.street},${f.city}`.trim().toLowerCase();
             cache[key] = coords;
             saveGeoCache(cache);
             // Add to geocodedPoints + place marker
@@ -1801,7 +1812,7 @@
           const first = incoming[0];
           if (first.hasOwnProperty('RATE_3EST') && first.hasOwnProperty('RATE_46EST') && first.hasOwnProperty('RATE_7PEST')) {
             const rates = {
-              est3:  parseFloat(first['RATE_3EST'])  || 0,
+              est3: parseFloat(first['RATE_3EST']) || 0,
               est46: parseFloat(first['RATE_46EST']) || 0,
               est7p: parseFloat(first['RATE_7PEST']) || 0,
             };
