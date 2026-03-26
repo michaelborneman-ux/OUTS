@@ -255,6 +255,14 @@
     <div class="bd-filter-bar">
       <button class="bd-filter-btn" id="bd-filter-missed">Missed</button>
       <button class="bd-filter-btn" id="bd-filter-skipped">Skipped</button>
+      <button class="bd-optimize-btn" id="bd-optimize-btn">Optimize Route</button>
+      <button class="bd-reset-btn hidden" id="bd-reset-order-btn">Reset Order</button>
+    </div>
+
+    <!-- Pick-start banner -->
+    <div class="bd-optimize-banner hidden" id="bd-optimize-banner">
+      <span>Tap an address to use as the starting point</span>
+      <button class="bd-optimize-cancel-btn" id="bd-optimize-cancel-btn">Cancel</button>
     </div>
 
     <!-- Address list -->
@@ -300,13 +308,44 @@
               <polyline points="15 18 9 12 15 6"/>
             </svg>
           </button>
-          <span class="card-dt-nav-pos" id="card-nav-pos"></span>
+          <div class="card-nav-center">
+            <span class="card-dt-nav-pos" id="card-nav-pos"></span>
+            <span class="card-nav-complete" id="card-nav-complete"></span>
+          </div>
           <button class="card-dt-nav-btn" id="card-next-btn" title="Next record">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polyline points="9 18 15 12 9 6"/>
             </svg>
           </button>
         </div>
+        <button class="card-dt-menu-btn" id="card-menu-btn" title="Options">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="card-dt-menu-dropdown hidden" id="card-menu-dropdown">
+        <button class="card-dt-menu-item" id="card-menu-reverse">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <polyline points="17 1 21 5 17 9"/>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+            <polyline points="7 23 3 19 7 15"/>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+          </svg>
+          <span>Reverse Direction</span>
+          <svg class="card-menu-check hidden" id="card-menu-reverse-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </button>
+        <button class="card-dt-menu-item" id="card-menu-search">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <span>Search List</span>
+        </button>
       </div>
       <div class="card-dt-seq" id="card-dt-seq"></div>
       <h1 class="card-dt-address" id="card-dt-address"></h1>
@@ -317,9 +356,15 @@
 
       <!-- Info fields -->
       <div class="card-dt-section">
-        <div class="card-dt-field-row">
-          <span class="card-dt-label">City</span>
-          <span class="card-dt-val" id="card-dt-city"></span>
+        <div class="card-dt-field-row-pair">
+          <div class="card-dt-pair-cell">
+            <span class="card-dt-label">City</span>
+            <span class="card-dt-val" id="card-dt-city"></span>
+          </div>
+          <div class="card-dt-pair-cell" id="card-dt-instrument-row">
+            <span class="card-dt-label">Instrument</span>
+            <span class="card-dt-val" id="card-dt-instrument"></span>
+          </div>
         </div>
         <div class="card-dt-field-row-pair" id="card-dt-loc-row">
           <div class="card-dt-pair-cell">
@@ -440,7 +485,7 @@
       </div>
     </div>
 
-    <!-- Re-geocode -->
+    <!-- Re-geocode + Download for offline -->
     <div class="map-regeocode-bar">
       <button class="map-regeocode-btn" id="map-geocode-btn" title="Clear geocode cache and re-geocode">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -448,6 +493,14 @@
           <path d="M3.51 15a9 9 0 1 0 .49-4.5"/>
         </svg>
         Re-geocode
+      </button>
+      <button class="map-regeocode-btn" id="map-download-btn" title="Download map tiles for offline use">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span id="map-download-label">Download Map</span>
       </button>
     </div>
 
@@ -742,6 +795,24 @@
       <div class="modal-actions">
         <button class="modal-cancel" id="fix-loc-cancel">Cancel</button>
         <button class="modal-confirm" id="fix-loc-confirm">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Unit Picker Modal -->
+  <div id="multi-unit-modal" class="modal-overlay hidden">
+    <div class="modal-sheet recover-modal-sheet">
+      <div class="modal-icon" style="background:#eff6ff;color:#3b82f6;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+      </div>
+      <h2 class="modal-title">Multiple Units Here</h2>
+      <p class="modal-desc">Tap a unit to open its card.</p>
+      <div class="recover-list" id="multi-unit-list"></div>
+      <div class="modal-actions" style="margin-top:12px;">
+        <button class="modal-cancel" id="multi-unit-close">Cancel</button>
       </div>
     </div>
   </div>

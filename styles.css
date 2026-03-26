@@ -1103,6 +1103,7 @@ html, body {
 .bd-search-icon {
   color: var(--text-light);
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .bd-search-input {
@@ -1346,6 +1347,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  position: relative;
 }
 
 .card-dt-nav-row {
@@ -1377,8 +1379,77 @@ html, body {
 .card-dt-nav-btn:hover { background: rgba(255,255,255,0.2); }
 .card-dt-nav-btn:disabled { opacity: 0.3; cursor: default; }
 
-.card-dt-nav-pos {
+.card-dt-menu-btn {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.card-dt-menu-btn:hover { background: rgba(255,255,255,0.2); }
+.card-dt-menu-btn.menu-open { background: rgba(255,255,255,0.22); }
+
+.card-dt-menu-dropdown {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: 16px;
+  background: var(--white);
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+  z-index: 200;
+  min-width: 200px;
+  overflow: hidden;
+  animation: fadeIn 0.12s ease;
+}
+
+.card-dt-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.card-dt-menu-item:last-child { border-bottom: none; }
+.card-dt-menu-item:hover { background: #f1f5f9; }
+.card-dt-menu-item.active { color: var(--accent); }
+
+.card-menu-check { margin-left: auto; color: var(--accent); }
+
+.card-dt-menu-dropdown.hidden { display: none; }
+.card-menu-check.hidden { display: none; }
+
+.card-nav-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.card-nav-complete {
   font-size: 0.78rem;
+  color: var(--header-sub);
+  white-space: nowrap;
+}
+
+.card-dt-nav-pos {
+  font-size: 0.94rem;
   font-weight: 600;
   color: var(--header-sub);
   min-width: 44px;
@@ -1816,6 +1887,7 @@ html, body {
   flex-shrink: 0;
   display: flex;
   justify-content: center;
+  gap: 10px;
 }
 
 .map-regeocode-btn {
@@ -2356,4 +2428,64 @@ html, body {
     border-left: 1px solid rgba(255,255,255,0.08);
     border-right: 1px solid rgba(255,255,255,0.08);
   }
+}
+
+/* ================================================
+   Route Optimization
+   ================================================ */
+.bd-optimize-btn {
+  padding: 6px 12px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.bd-optimize-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.bd-reset-btn {
+  padding: 6px 12px;
+  background: #d97706;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.bd-reset-btn.hidden { display: none; }
+
+.bd-optimize-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1e40af;
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+.bd-optimize-banner.hidden { display: none; }
+
+.bd-optimize-cancel-btn {
+  background: transparent;
+  border: 1px solid #fff;
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.pick-start-mode .addr-card {
+  cursor: pointer;
+  outline: 2px dashed #2563eb;
+}
+.pick-start-mode .addr-card:hover {
+  background: #eff6ff;
 }

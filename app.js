@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v6.5';
+  const APP_VERSION = 'v6.8';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -20,6 +20,10 @@
   let currentBundle = null;    // bundle open in detail view
   let currentRow = null;    // row open in card detail view
   let cardReturnTarget = 'bundle'; // 'bundle' or 'map'
+  let reverseDirection = false;    // when true, save auto-advances to previous card
+  let pickStartMode = false;       // route optimization: waiting for user to pick start address
+  let originalRowsOrder = null;    // saved copy of rows array before optimization
+  let routeOptimized = false;      // whether current bundle has been optimized
 
   // Default rates by area code (used to pre-fill the rate modal)
   const AREA_RATES = {
@@ -115,6 +119,8 @@
   const cardDtSeq = document.getElementById('card-dt-seq');
   const cardDtAddress = document.getElementById('card-dt-address');
   const cardDtCity = document.getElementById('card-dt-city');
+  const cardDtInstrumentRow = document.getElementById('card-dt-instrument-row');
+  const cardDtInstrument = document.getElementById('card-dt-instrument');
   const cardDtLocRow = document.getElementById('card-dt-loc-row');
   const cardDtLoc = document.getElementById('card-dt-loc');
   const cardDtMtrSize = document.getElementById('card-dt-mtr-size');
@@ -129,10 +135,54 @@
   const cardDtComments = document.getElementById('card-dt-comments');
   const cardDtSaveBtn = document.getElementById('card-dt-save-btn');
   const cardNavPos = document.getElementById('card-nav-pos');
+  const cardNavComplete = document.getElementById('card-nav-complete');
   const cardPrevBtn = document.getElementById('card-prev-btn');
   const cardNextBtn = document.getElementById('card-next-btn');
+  const cardMenuBtn = document.getElementById('card-menu-btn');
+  const cardMenuDropdown = document.getElementById('card-menu-dropdown');
+  const cardMenuReverseCheck = document.getElementById('card-menu-reverse-check');
   document.getElementById('card-back-btn').addEventListener('click', cardGoBack);
   document.getElementById('card-back-nav').addEventListener('click', cardGoBack);
+
+  // ─── Card burger menu ─────────────────────────────
+  function openCardMenu() {
+    cardMenuDropdown.classList.remove('hidden');
+    cardMenuBtn.classList.add('menu-open');
+  }
+
+  function closeCardMenu() {
+    cardMenuDropdown.classList.add('hidden');
+    cardMenuBtn.classList.remove('menu-open');
+  }
+
+  // Use pointerdown on the button so stopPropagation prevents the document
+  // handler from firing on the same interaction (avoids open→close→open race).
+  cardMenuBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    cardMenuDropdown.classList.contains('hidden') ? openCardMenu() : closeCardMenu();
+  });
+
+  document.addEventListener('pointerdown', (e) => {
+    if (!cardMenuDropdown.classList.contains('hidden') &&
+      !cardMenuDropdown.contains(e.target)) {
+      closeCardMenu();
+    }
+  });
+
+  document.getElementById('card-menu-reverse').addEventListener('click', () => {
+    reverseDirection = !reverseDirection;
+    cardMenuReverseCheck.classList.toggle('hidden', !reverseDirection);
+    document.getElementById('card-menu-reverse').classList.toggle('active', reverseDirection);
+    closeCardMenu();
+    showToast(reverseDirection ? 'Direction reversed — saving goes backward' : 'Direction restored — saving goes forward');
+  });
+
+  document.getElementById('card-menu-search').addEventListener('click', () => {
+    closeCardMenu();
+    viewCard.classList.add('hidden');
+    viewBundle.classList.remove('hidden');
+    setTimeout(() => { bdSearch.focus(); bdSearch.select(); }, 80);
+  });
 
   // Map view DOM refs
   const viewMap = document.getElementById('view-map');
@@ -148,6 +198,7 @@
   const mapNotFoundLabel = document.getElementById('map-notfound-label');
   const geocodeFixModal = document.getElementById('geocode-fix-modal');
   const geocodeFixList = document.getElementById('geocode-fix-list');
+  const multiUnitModal = document.getElementById('multi-unit-modal');
   const mapBundleFilter = document.getElementById('map-bundle-filter');
 
   // Rate modal
@@ -227,15 +278,161 @@
     showMapView();
   });
 
+  document.getElementById('map-download-btn').addEventListener('click', downloadMapTiles);
+
   // Not-found bar + fix modal
   document.getElementById('map-notfound-btn').addEventListener('click', showGeocodeFix);
   document.getElementById('geocode-fix-close').addEventListener('click', () => {
     geocodeFixModal.classList.add('hidden');
   });
 
+  document.getElementById('multi-unit-close').addEventListener('click', () => {
+    multiUnitModal.classList.add('hidden');
+  });
+
+  // ── Route Optimization Helpers ───────────────────────────────────────────
+
+  function getRowCoords(row) {
+    const cache = loadGeoCache();
+    const mapAddress = (row['Map Address'] || '').trim();
+    const num = (row['#'] || '').trim();
+    const street = (row['STREET'] || '').trim();
+    const city = (row['City'] || '').trim();
+    const { cleanNum, cleanStreet } = stripUnitInfo(num, street);
+    const key = mapAddress
+      ? mapAddress.trim().toLowerCase()
+      : `${cleanNum} ${cleanStreet},${city}`.trim().toLowerCase();
+    return cache[key] || null;
+  }
+
+  function haversineDistance(a, b) {
+    const R = 6371000;
+    const toRad = x => x * Math.PI / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const sLat = Math.sin(dLat / 2);
+    const sLng = Math.sin(dLng / 2);
+    const c = sLat * sLat + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sLng * sLng;
+    return R * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
+  }
+
+  function computeOptimizedOrder(rows, startRow) {
+    const points = rows.map((r, i) => ({ i, coords: getRowCoords(r) }));
+    const withCoords = points.filter(p => p.coords);
+    const withoutCoords = points.filter(p => !p.coords);
+
+    if (withCoords.length === 0) return rows;
+
+    const startOrigIdx = rows.indexOf(startRow);
+    let start = withCoords.findIndex(p => p.i === startOrigIdx);
+    if (start < 0) start = 0;
+
+    // Nearest-neighbor
+    const visited = new Array(withCoords.length).fill(false);
+    const order = [start];
+    visited[start] = true;
+    for (let step = 1; step < withCoords.length; step++) {
+      const last = order[order.length - 1];
+      let best = -1, bestDist = Infinity;
+      for (let j = 0; j < withCoords.length; j++) {
+        if (visited[j]) continue;
+        const d = haversineDistance(withCoords[last].coords, withCoords[j].coords);
+        if (d < bestDist) { bestDist = d; best = j; }
+      }
+      order.push(best);
+      visited[best] = true;
+    }
+
+    // 2-opt improvement
+    let improved = true;
+    while (improved) {
+      improved = false;
+      for (let i = 1; i < order.length - 1; i++) {
+        for (let j = i + 1; j < order.length; j++) {
+          const a = order[i - 1], b = order[i], c = order[j];
+          const d = j + 1 < order.length ? order[j + 1] : -1;
+          const distBefore = haversineDistance(withCoords[a].coords, withCoords[b].coords)
+            + (d >= 0 ? haversineDistance(withCoords[c].coords, withCoords[d].coords) : 0);
+          const distAfter = haversineDistance(withCoords[a].coords, withCoords[c].coords)
+            + (d >= 0 ? haversineDistance(withCoords[b].coords, withCoords[d].coords) : 0);
+          if (distAfter < distBefore - 0.1) {
+            order.splice(i, j - i + 1, ...order.slice(i, j + 1).reverse());
+            improved = true;
+          }
+        }
+      }
+    }
+
+    const optimized = order.map(idx => rows[withCoords[idx].i]);
+    const ungeocoded = withoutCoords.map(p => rows[p.i]);
+    return [...optimized, ...ungeocoded];
+  }
+
+  function enterPickStartMode() {
+    pickStartMode = true;
+    document.getElementById('bd-optimize-banner').classList.remove('hidden');
+    document.getElementById('address-list').classList.add('pick-start-mode');
+  }
+
+  function exitPickStartMode() {
+    pickStartMode = false;
+    document.getElementById('bd-optimize-banner').classList.add('hidden');
+    document.getElementById('address-list').classList.remove('pick-start-mode');
+  }
+
+  function applyRouteOptimization(bundle, startRow) {
+    exitPickStartMode();
+    const rows = bundle.rows;
+    if (!routeOptimized) {
+      originalRowsOrder = rows.slice();
+    }
+    const optimized = computeOptimizedOrder(rows, startRow);
+    optimized.forEach((r, i) => { r['Seq #'] = i + 1; });
+    bundle.rows = optimized;
+    routeOptimized = true;
+    document.getElementById('bd-reset-order-btn').classList.remove('hidden');
+    showBundleDetail(bundle, true);
+  }
+
+  function resetRouteOrder() {
+    if (!originalRowsOrder) return;
+    // Restore original Seq # values
+    originalRowsOrder.forEach((r, i) => { r['Seq #'] = i + 1; });
+    currentBundle.rows = originalRowsOrder.slice();
+    originalRowsOrder = null;
+    routeOptimized = false;
+    document.getElementById('bd-reset-order-btn').classList.add('hidden');
+    showBundleDetail(currentBundle, true);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Returns expected digit count for a given meter size, or null if unrestricted.
+  function getExpectedDigits(mtrSize) {
+    const s = (mtrSize || '').trim().toUpperCase();
+    if (s === 'UD') return 6;
+    if (s === 'UC' || s === 'UB') return 5;
+    if (s.startsWith('S')) return 5;
+    if (s.startsWith('C') || s.startsWith('D') || s.startsWith('G')) return 4;
+    return null;
+  }
+
+  function padReading(val, mtrSize) {
+    const digits = getExpectedDigits(mtrSize);
+    return (digits && val.length > 0 && val.length < digits)
+      ? val.padStart(digits, '0')
+      : val;
+  }
+
   cardDtReading.addEventListener('input', () => {
     const cleaned = cardDtReading.value.replace(/\D/g, '');
     if (cleaned !== cardDtReading.value) cardDtReading.value = cleaned;
+  });
+
+  cardDtReading.addEventListener('blur', () => {
+    const val = cardDtReading.value.trim();
+    if (!val || !currentRow) return;
+    cardDtReading.value = padReading(val, currentRow['MTR SIZE']);
   });
 
   cardDtSkip.addEventListener('change', () => {
@@ -522,10 +719,79 @@
     return '#3b82f6';               // blue — unread
   }
 
-  function makeCircleIcon(color) {
+  function makeCircleIcon(color, count) {
+    if (count && count > 1) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">` +
+        `<circle cx="14" cy="14" r="12" fill="${color}" stroke="#fff" stroke-width="2.5"/>` +
+        `<text x="14" y="19" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff" font-family="sans-serif">${count}</text>` +
+        `</svg>`;
+      return L.divIcon({ html: svg, className: '', iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -14] });
+    }
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">` +
       `<circle cx="10" cy="10" r="8" fill="${color}" stroke="#fff" stroke-width="2"/></svg>`;
     return L.divIcon({ html: svg, className: '', iconSize: [20, 20], iconAnchor: [10, 10], popupAnchor: [0, -12] });
+  }
+
+  function getGroupColor(rows) {
+    if (rows.some(r => getMarkerColor(r) === '#3b82f6')) return '#3b82f6';
+    if (rows.some(r => getMarkerColor(r) === '#f59e0b')) return '#f59e0b';
+    return '#22c55e';
+  }
+
+  // ─── Offline tile download ────────────────────────
+  function latLngToTileXY(lat, lng, zoom) {
+    const n = 1 << zoom;
+    const x = Math.floor((lng + 180) / 360 * n);
+    const latRad = lat * Math.PI / 180;
+    const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n);
+    return { x: Math.max(0, Math.min(n - 1, x)), y: Math.max(0, Math.min(n - 1, y)) };
+  }
+
+  async function downloadMapTiles() {
+    if (!leafletMap) return;
+    const label = document.getElementById('map-download-label');
+    const btn = document.getElementById('map-download-btn');
+
+    const bounds = leafletMap.getBounds();
+    const latPad = (bounds.getNorth() - bounds.getSouth()) * 0.15;
+    const lngPad = (bounds.getEast() - bounds.getWest()) * 0.15;
+    const N = bounds.getNorth() + latPad, S = bounds.getSouth() - latPad;
+    const E = bounds.getEast() + lngPad, W = bounds.getWest() - lngPad;
+
+    const SUB = ['a', 'b', 'c'];
+    const urls = [];
+    for (let z = 12; z <= 18; z++) {
+      const min = latLngToTileXY(N, W, z);
+      const max = latLngToTileXY(S, E, z);
+      for (let x = min.x; x <= max.x; x++) {
+        for (let y = min.y; y <= max.y; y++) {
+          urls.push(`https://${SUB[(x + y) % 3]}.tile.openstreetmap.org/${z}/${x}/${y}.png`);
+        }
+      }
+    }
+
+    if (urls.length > 3000) {
+      showToast(`Area too large (${urls.length} tiles). Zoom in closer first.`, true);
+      return;
+    }
+
+    btn.disabled = true;
+    let done = 0;
+    const total = urls.length;
+    const BATCH = 8;
+
+    for (let i = 0; i < urls.length; i += BATCH) {
+      await Promise.all(
+        urls.slice(i, i + BATCH).map(u => fetch(u, { mode: 'cors' }).catch(() => { }))
+      );
+      done = Math.min(i + BATCH, total);
+      label.textContent = `${done} / ${total}`;
+    }
+
+    btn.disabled = false;
+    label.textContent = '✓ Map Saved';
+    showToast(`${total} tiles cached — map works offline`);
+    setTimeout(() => { label.textContent = 'Download Map'; }, 4000);
   }
 
   function initLeafletMap() {
@@ -633,22 +899,28 @@
 
   function updateMapMarkerForRow(row) {
     const entry = mapMarkers.find(m => m.row === row);
-    if (entry) entry.marker.setIcon(makeCircleIcon(getMarkerColor(row)));
+    if (!entry) return;
+    const sharedRows = mapMarkers.filter(m => m.marker === entry.marker).map(m => m.row);
+    entry.marker.setIcon(makeCircleIcon(getGroupColor(sharedRows), sharedRows.length > 1 ? sharedRows.length : undefined));
   }
 
-  // Single tap → briefly show popup. Double tap → open data entry.
-  function attachMarkerTapHandlers(marker, row, bundle, lat, lng) {
+  // Single tap → briefly show popup. Double tap → open data entry (or unit picker for stacked markers).
+  function attachMarkerTapHandlers(marker, rows, bundles, lat, lng) {
     let tapTimer = null;
     marker.on('click', () => {
       if (tapTimer) {
         clearTimeout(tapTimer);
         tapTimer = null;
         marker.closePopup();
-        viewMap.classList.add('hidden');
-        showBundleDetail(bundle);
-        showCardDetail(row, bundle, 'map');
+        if (rows.length === 1) {
+          viewMap.classList.add('hidden');
+          showBundleDetail(bundles[0]);
+          showCardDetail(rows[0], bundles[0], 'map');
+        } else {
+          showMultiUnitPicker(rows, bundles);
+        }
       } else {
-        pendingFixPoint = { row, bundle, marker, lat, lng };
+        pendingFixPoint = { row: rows[0], bundle: bundles[0], marker, lat, lng };
         marker.openPopup();
         tapTimer = setTimeout(() => { tapTimer = null; }, 300);
         setTimeout(() => marker.closePopup(), 2500);
@@ -662,17 +934,36 @@
     if (!mapInitialized) return;
     clearMapMarkers();
     const bounds = [];
-    points.forEach(({ lat, lng, row, bundle }) => {
-      const icon = makeCircleIcon(getMarkerColor(row));
-      const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
-      const loc = (row['LOC'] || '').trim();
+
+    // Group overlapping points by lat/lng so stacked addresses get one marker
+    const groups = new Map();
+    points.forEach(pt => {
+      const key = `${pt.lat.toFixed(6)},${pt.lng.toFixed(6)}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(pt);
+    });
+
+    groups.forEach(pts => {
+      const { lat, lng } = pts[0];
+      const rows = pts.map(p => p.row);
+      const bundles = pts.map(p => p.bundle);
+      const count = pts.length;
+      const color = getGroupColor(rows);
+      const icon = makeCircleIcon(color, count > 1 ? count : undefined);
       const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-      const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a><br><a href="#" class="popup-nav-link" onclick="window._openFixLocation();return false;">&#9999; Fix Location</a>`;
+      const addr = [rows[0]['#'], rows[0]['STREET']].filter(Boolean).join(' ');
+      const loc = (rows[0]['LOC'] || '').trim();
+      let popup;
+      if (count === 1) {
+        popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundles[0].bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a><br><a href="#" class="popup-nav-link" onclick="window._openFixLocation();return false;">&#9999; Fix Location</a>`;
+      } else {
+        popup = `<strong>${addr}</strong> <span style="background:#3b82f6;color:#fff;border-radius:4px;padding:1px 6px;font-size:0.78em;font-weight:700;">${count} units</span><br><span style="font-size:0.82em;opacity:0.7">Double-tap to select a unit</span><br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a><br><a href="#" class="popup-nav-link" onclick="window._openFixLocation();return false;">&#9999; Fix Location</a>`;
+      }
       const marker = L.marker([lat, lng], { icon })
         .addTo(leafletMap)
         .bindPopup(popup, { autoClose: false, closeOnClick: false });
-      attachMarkerTapHandlers(marker, row, bundle, lat, lng);
-      mapMarkers.push({ marker, row, bundle });
+      attachMarkerTapHandlers(marker, rows, bundles, lat, lng);
+      rows.forEach((row, i) => mapMarkers.push({ marker, row, bundle: bundles[i] }));
       bounds.push([lat, lng]);
     });
     populateBundleFilter();
@@ -778,12 +1069,41 @@
     const icon = makeCircleIcon(getMarkerColor(row));
     const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
     const loc = (row['LOC'] || '').trim();
-    const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}`;
+    const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${coords.lat},${coords.lng}`;
+    const popup = `<strong>${addr}</strong>${loc ? `<br><span style="font-size:0.85em;opacity:0.8">${loc}</span>` : ''}<br>${bundle.bundleName || ''}<br><a href="${mapsUrl}" target="_blank" rel="noopener" class="popup-nav-link">&#9654; Navigate</a><br><a href="#" class="popup-nav-link" onclick="window._openFixLocation();return false;">&#9999; Fix Location</a>`;
     const marker = L.marker([coords.lat, coords.lng], { icon })
       .addTo(leafletMap)
       .bindPopup(popup, { autoClose: false, closeOnClick: false });
-    attachMarkerTapHandlers(marker, row, bundle);
+    attachMarkerTapHandlers(marker, [row], [bundle], coords.lat, coords.lng);
     mapMarkers.push({ marker, row, bundle });
+  }
+
+  function showMultiUnitPicker(rows, bundles) {
+    const list = document.getElementById('multi-unit-list');
+    list.innerHTML = '';
+    rows.forEach((row, i) => {
+      const bundle = bundles[i];
+      const addr = [row['#'], row['STREET']].filter(Boolean).join(' ');
+      const loc = (row['LOC'] || '').trim();
+      const color = getMarkerColor(row);
+      const statusLabel = color === '#22c55e' ? 'Read' : color === '#f59e0b' ? 'Skipped' : 'Unread';
+      const item = document.createElement('div');
+      item.className = 'recover-item';
+      item.innerHTML =
+        `<div class="recover-item-info">` +
+        `<div class="recover-item-name">${addr}${loc ? ` \u2014 ${loc}` : ''}</div>` +
+        `<div class="recover-item-meta">${bundle.bundleName || ''} \u00b7 ${statusLabel}</div>` +
+        `</div>` +
+        `<button class="recover-item-btn" style="background:${color}">Open</button>`;
+      item.querySelector('button').addEventListener('click', () => {
+        multiUnitModal.classList.add('hidden');
+        viewMap.classList.add('hidden');
+        showBundleDetail(bundle);
+        showCardDetail(row, bundle, 'map');
+      });
+      list.appendChild(item);
+    });
+    multiUnitModal.classList.remove('hidden');
   }
 
   function showGeocodeFix() {
@@ -981,6 +1301,7 @@
     if (bundles.length === 0) {
       uploadPrompt.classList.remove('hidden');
       bundleList.classList.add('hidden');
+      bundleList.innerHTML = '';
       return;
     }
 
@@ -1118,6 +1439,7 @@
 
   // ─── Navigation ───────────────────────────────────
   function goHome() {
+    if (pickStartMode) exitPickStartMode();
     if (leafletMap) leafletMap.stopLocate();
     clearGpsTimer();
     viewBundle.classList.add('hidden');
@@ -1185,9 +1507,19 @@
     cardDtSeq.textContent = `Seq #${row['Seq #'] || '—'}`;
     cardDtAddress.textContent = address || '—';
     cardDtCity.textContent = row['City'] || '—';
-    cardDtMtrSize.textContent = row['MTR SIZE'] || '—';
+    const instrument = (row['Instrument'] || '').trim();
+    cardDtInstrument.textContent = instrument || '—';
+    cardDtInstrumentRow.style.display = instrument ? '' : 'none';
+    const mtrSize = row['MTR SIZE'] || '';
+    cardDtMtrSize.textContent = mtrSize || '—';
     cardDtSerial.textContent = row['Serial No.'] || '—';
     cardDtEst.textContent = row['# EST'] || '0';
+
+    const expectedDigits = getExpectedDigits(mtrSize);
+    cardDtReading.maxLength = expectedDigits || 10;
+    cardDtReading.placeholder = expectedDigits
+      ? `Enter ${expectedDigits}-digit reading…`
+      : 'Enter meter reading…';
 
     // Location — hide row if empty
     cardDtLoc.textContent = loc;
@@ -1217,6 +1549,8 @@
     const rows = bundle.rows;
     const idx = rows.indexOf(row);
     cardNavPos.textContent = `${idx + 1} / ${rows.length}`;
+    const complete = rows.filter(r => (r['READING'] || '').trim() || (r['SKIP'] || '').trim()).length;
+    cardNavComplete.textContent = `${complete} / ${rows.length} complete`;
     cardPrevBtn.disabled = idx === 0;
     cardNextBtn.disabled = idx === rows.length - 1;
 
@@ -1239,7 +1573,7 @@
 
   // Save reading handler
   cardDtSaveBtn.addEventListener('click', () => {
-    const reading = cardDtReading.value.trim();
+    const reading = padReading(cardDtReading.value.trim(), currentRow['MTR SIZE']);
     const skip = cardDtSkip.value;
     const date = cardDtReadDate.value;
     const comments = cardDtComments.value.trim();
@@ -1269,6 +1603,7 @@
     // Brief "Saved" confirmation, then advance to the next card
     cardDtSaveBtn.textContent = '✓ Saved';
     cardDtSaveBtn.disabled = true;
+    playDing();
 
     const rows = currentBundle.rows;
     const savedIdx = rows.indexOf(currentRow);
@@ -1277,8 +1612,9 @@
       cardDtSaveBtn.textContent = 'Save Reading';
       cardDtSaveBtn.disabled = false;
       showBundleDetail(currentBundle);   // re-renders list + header
-      if (savedIdx < rows.length - 1) {
-        showCardDetail(rows[savedIdx + 1], currentBundle);
+      const nextIdx = reverseDirection ? savedIdx - 1 : savedIdx + 1;
+      if (nextIdx >= 0 && nextIdx < rows.length) {
+        showCardDetail(rows[nextIdx], currentBundle);
       }
     }, 600);
   });
@@ -1374,6 +1710,10 @@
 
   bdSearch.addEventListener('input', applyBdFilters);
 
+  document.querySelector('#view-bundle .bd-search-icon').addEventListener('click', () => {
+    bdSearch.blur();
+  });
+
   bdFilterMissedBtn.addEventListener('click', () => {
     bdShowMissed = !bdShowMissed;
     bdFilterMissedBtn.classList.toggle('active', bdShowMissed);
@@ -1384,6 +1724,18 @@
     bdShowSkipped = !bdShowSkipped;
     bdFilterSkippedBtn.classList.toggle('active', bdShowSkipped);
     applyBdFilters();
+  });
+
+  document.getElementById('bd-optimize-btn').addEventListener('click', () => {
+    enterPickStartMode();
+  });
+
+  document.getElementById('bd-optimize-cancel-btn').addEventListener('click', () => {
+    exitPickStartMode();
+  });
+
+  document.getElementById('bd-reset-order-btn').addEventListener('click', () => {
+    resetRouteOrder();
   });
 
   // ─── Totals / Daily Report View ───────────────────
@@ -1481,9 +1833,19 @@
   }
 
   // ─── Bundle Detail View ───────────────────────────
-  function showBundleDetail(bundle) {
+  function showBundleDetail(bundle, forcePreserveSearch) {
     pendingBundle = null;
     document.getElementById('bd-report-btn').onclick = () => showTotalsView(bundle);
+
+    // Reset optimization state when switching to a different bundle
+    const isNewBundle = bundle !== currentBundle;
+    if (isNewBundle) {
+      if (pickStartMode) exitPickStartMode();
+      routeOptimized = false;
+      originalRowsOrder = null;
+      document.getElementById('bd-reset-order-btn').classList.add('hidden');
+    }
+    currentBundle = bundle;
 
     const status = getBundleStatus(bundle);
     const pct = bundle.total > 0 ? Math.round((bundle.read / bundle.total) * 100) : 0;
@@ -1521,11 +1883,15 @@
       return sa - sb;
     });
 
+    const preserveSearch = forcePreserveSearch || !isNewBundle;
+    const savedSearch = preserveSearch ? bdSearch.value : '';
     bdSearch.value = '';
-    bdShowMissed = false;
-    bdShowSkipped = false;
-    bdFilterMissedBtn.classList.remove('active');
-    bdFilterSkippedBtn.classList.remove('active');
+    if (!preserveSearch) {
+      bdShowMissed = false;
+      bdShowSkipped = false;
+      bdFilterMissedBtn.classList.remove('active');
+      bdFilterSkippedBtn.classList.remove('active');
+    }
     addressList.innerHTML = '';
     const frag = document.createDocumentFragment();
 
@@ -1576,12 +1942,20 @@
           ${estLabel ? `<span class="addr-est-badge ${estClass}">${estLabel}</span>` : ''}
         </div>
       `;
-      card.addEventListener('click', () => showCardDetail(row, bundle, 'bundle'));
+      card.addEventListener('click', () => {
+        if (pickStartMode) { applyRouteOptimization(bundle, row); return; }
+        showCardDetail(row, bundle, 'bundle');
+      });
 
       frag.appendChild(card);
     });
 
     addressList.appendChild(frag);
+
+    if (savedSearch) {
+      bdSearch.value = savedSearch;
+      applyBdFilters();
+    }
 
     viewHome.classList.add('hidden');
     viewBundle.classList.remove('hidden');
@@ -1686,6 +2060,11 @@
       </button>`;
     bar.querySelector('.recover-btn').addEventListener('click', openRecoverModal);
     bundleList.appendChild(bar);
+
+    // If no bundles are loaded, renderHome() hides bundleList — un-hide it so the recover bar shows
+    if (bundles.length === 0) {
+      bundleList.classList.remove('hidden');
+    }
   }
 
   function openRecoverModal() {
@@ -2240,6 +2619,12 @@
     dueWarningModal.classList.add('hidden')
   );
 
+  // Parse a YYYY-MM-DD string as local midnight (new Date(str) treats it as UTC).
+  function parseDateLocal(str) {
+    const [y, m, d] = str.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
   function checkDueDateWarnings() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -2250,8 +2635,7 @@
       if (sentBundles.has(b.key)) return false;
       const dueDate = (bundleRates[b.key]?.dueDate || '').trim();
       if (!dueDate) return false;
-      const due = new Date(dueDate);
-      due.setHours(0, 0, 0, 0);
+      const due = parseDateLocal(dueDate);
       return due <= tomorrow;
     });
 
@@ -2259,8 +2643,7 @@
 
     const lines = warnings.map(b => {
       const dueDate = bundleRates[b.key]?.dueDate || '';
-      const due = new Date(dueDate);
-      due.setHours(0, 0, 0, 0);
+      const due = parseDateLocal(dueDate);
       const todayMs = new Date(); todayMs.setHours(0, 0, 0, 0);
       const status = due < todayMs ? 'Overdue' : due.getTime() === todayMs.getTime() ? 'Due today' : 'Due tomorrow';
       return `• ${b.bundleName} — ${status} (${dueDate})`;
@@ -2268,6 +2651,25 @@
 
     dueWarningDesc.textContent = lines.join('\n');
     dueWarningModal.classList.remove('hidden');
+  }
+
+  // ─── Ding sound ───────────────────────────────────
+  function playDing() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1047, ctx.currentTime);        // C6
+      osc.frequency.setValueAtTime(1319, ctx.currentTime + 0.08); // E6
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.5);
+      osc.onended = () => ctx.close();
+    } catch (_) { }
   }
 
   // ─── Toast ────────────────────────────────────────
