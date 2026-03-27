@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v6.8';
+  const APP_VERSION = 'v7.0';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -316,16 +316,50 @@
     return R * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
   }
 
-  function computeOptimizedOrder(rows, startRow) {
+  // Fetch NxN road-time matrix from OSRM Table API.
+  // Returns 2D array of travel times (seconds), or null on failure.
+  async function getRoadDistanceMatrix(coords) {
+    if (!navigator.onLine) return null;
+    // OSRM demo server caps at ~100 coordinates
+    if (coords.length > 100) return null;
+    try {
+      const coordStr = coords.map(c => `${c.lng},${c.lat}`).join(';');
+      const resp = await fetch(
+        `https://router.project-osrm.org/table/v1/driving/${coordStr}?annotations=duration`,
+        { headers: { 'User-Agent': 'MeterReaderPWA/1.0' }, signal: AbortSignal.timeout(10000) }
+      );
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      if (data.code !== 'Ok' || !data.durations) return null;
+      return data.durations;  // matrix[i][j] = seconds from i to j
+    } catch {
+      return null;
+    }
+  }
+
+  async function computeOptimizedOrder(rows, startRow) {
     const points = rows.map((r, i) => ({ i, coords: getRowCoords(r) }));
     const withCoords = points.filter(p => p.coords);
     const withoutCoords = points.filter(p => !p.coords);
 
-    if (withCoords.length === 0) return rows;
+    if (withCoords.length === 0) return { ordered: rows, usedRoads: false };
 
     const startOrigIdx = rows.indexOf(startRow);
     let start = withCoords.findIndex(p => p.i === startOrigIdx);
     if (start < 0) start = 0;
+
+    // Try road distances first, fall back to straight-line
+    const matrix = await getRoadDistanceMatrix(withCoords.map(p => p.coords));
+    const usedRoads = matrix !== null;
+
+    function dist(a, b) {
+      if (matrix) {
+        const t = matrix[a]?.[b];
+        // null/undefined values in OSRM matrix mean unreachable — fall back to haversine
+        return (t != null) ? t : haversineDistance(withCoords[a].coords, withCoords[b].coords);
+      }
+      return haversineDistance(withCoords[a].coords, withCoords[b].coords);
+    }
 
     // Nearest-neighbor
     const visited = new Array(withCoords.length).fill(false);
@@ -336,7 +370,7 @@
       let best = -1, bestDist = Infinity;
       for (let j = 0; j < withCoords.length; j++) {
         if (visited[j]) continue;
-        const d = haversineDistance(withCoords[last].coords, withCoords[j].coords);
+        const d = dist(last, j);
         if (d < bestDist) { bestDist = d; best = j; }
       }
       order.push(best);
@@ -351,10 +385,8 @@
         for (let j = i + 1; j < order.length; j++) {
           const a = order[i - 1], b = order[i], c = order[j];
           const d = j + 1 < order.length ? order[j + 1] : -1;
-          const distBefore = haversineDistance(withCoords[a].coords, withCoords[b].coords)
-            + (d >= 0 ? haversineDistance(withCoords[c].coords, withCoords[d].coords) : 0);
-          const distAfter = haversineDistance(withCoords[a].coords, withCoords[c].coords)
-            + (d >= 0 ? haversineDistance(withCoords[b].coords, withCoords[d].coords) : 0);
+          const distBefore = dist(a, b) + (d >= 0 ? dist(c, d) : 0);
+          const distAfter = dist(a, c) + (d >= 0 ? dist(b, d) : 0);
           if (distAfter < distBefore - 0.1) {
             order.splice(i, j - i + 1, ...order.slice(i, j + 1).reverse());
             improved = true;
@@ -365,7 +397,7 @@
 
     const optimized = order.map(idx => rows[withCoords[idx].i]);
     const ungeocoded = withoutCoords.map(p => rows[p.i]);
-    return [...optimized, ...ungeocoded];
+    return { ordered: [...optimized, ...ungeocoded], usedRoads };
   }
 
   function enterPickStartMode() {
@@ -380,18 +412,29 @@
     document.getElementById('address-list').classList.remove('pick-start-mode');
   }
 
-  function applyRouteOptimization(bundle, startRow) {
+  async function applyRouteOptimization(bundle, startRow) {
     exitPickStartMode();
     const rows = bundle.rows;
     if (!routeOptimized) {
       originalRowsOrder = rows.slice();
     }
-    const optimized = computeOptimizedOrder(rows, startRow);
-    optimized.forEach((r, i) => { r['Seq #'] = i + 1; });
-    bundle.rows = optimized;
+
+    // Show loading state while OSRM is queried
+    const optimizeBtn = document.getElementById('bd-optimize-btn');
+    optimizeBtn.textContent = 'Optimizing...';
+    optimizeBtn.disabled = true;
+
+    const { ordered, usedRoads } = await computeOptimizedOrder(rows, startRow);
+    ordered.forEach((r, i) => { r['Seq #'] = i + 1; });
+    bundle.rows = ordered;
     routeOptimized = true;
+
+    optimizeBtn.textContent = 'Optimize Route';
+    optimizeBtn.disabled = false;
+
     document.getElementById('bd-reset-order-btn').classList.remove('hidden');
     showBundleDetail(bundle, true);
+    showToast(usedRoads ? 'Route optimized using road distances.' : 'Offline — route optimized using straight-line distances.');
   }
 
   function resetRouteOrder() {
