@@ -1688,6 +1688,13 @@ html, body {
   cursor: default;
 }
 
+.card-dt-reading-input.reading-locked {
+  background: #f1f5f9;
+  color: var(--text-medium);
+  border-color: var(--divider);
+  cursor: default;
+}
+
 /* Comments textarea */
 .card-dt-comments-input {
   width: 100%;

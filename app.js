@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v7.0';
+  const APP_VERSION = 'v7.1';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -155,6 +155,11 @@
     cardMenuBtn.classList.remove('menu-open');
   }
 
+  function setReadingLocked(locked) {
+    cardDtReading.readOnly = locked;
+    cardDtReading.classList.toggle('reading-locked', locked);
+  }
+
   // Use pointerdown on the button so stopPropagation prevents the document
   // handler from firing on the same interaction (avoids open→close→open race).
   cardMenuBtn.addEventListener('pointerdown', (e) => {
@@ -182,6 +187,24 @@
     viewCard.classList.add('hidden');
     viewBundle.classList.remove('hidden');
     setTimeout(() => { bdSearch.focus(); bdSearch.select(); }, 80);
+  });
+
+  document.getElementById('card-menu-delete-reading').addEventListener('click', () => {
+    closeCardMenu();
+    currentRow['READING'] = '';
+    const hasSkip = (currentRow['SKIP'] || '').trim() !== '' && currentRow['SKIP'] !== 'Other';
+    const hasComments = (currentRow['COMMENTS'] || '').trim() !== '';
+    if (!hasSkip && !hasComments) {
+      currentRow['READ DATE'] = '';
+    }
+    cardDtReading.value = '';
+    setReadingLocked(false);
+    document.getElementById('card-menu-delete-reading').classList.add('hidden');
+    updateMapMarkerForRow(currentRow);
+    refreshBundleStats(currentBundle);
+    saveRecordsBackup();
+    renderHome();
+    showToast('Reading deleted');
   });
 
   // Map view DOM refs
@@ -1574,6 +1597,9 @@
 
     // Pre-fill reading, skip, comments, and date
     cardDtReading.value = (row['READING'] || '').trim();
+    const hasReading = cardDtReading.value !== '';
+    setReadingLocked(hasReading);
+    document.getElementById('card-menu-delete-reading').classList.toggle('hidden', !hasReading);
     const savedSkip = row['SKIP'] || '';
     cardDtSkip.value = savedSkip;
     cardDtSkipOther.value = row['SKIP_OTHER'] || '';
@@ -1638,6 +1664,10 @@
     // Lock or unlock the date field to match the new state
     cardDtReadDate.readOnly = isComplete;
     cardDtReadDate.classList.toggle('date-locked', isComplete);
+
+    // Lock the reading input if a reading was saved
+    setReadingLocked(reading !== '');
+    document.getElementById('card-menu-delete-reading').classList.toggle('hidden', reading === '');
 
     refreshBundleStats(currentBundle);
     saveRecordsBackup();               // persist every save in case of crash
