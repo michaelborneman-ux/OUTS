@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v7.1';
+  const APP_VERSION = 'v7.2';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -106,6 +106,10 @@
   const bdFilterSkippedBtn = document.getElementById('bd-filter-skipped');
   document.getElementById('bundle-back-btn').addEventListener('click', goHome);
   document.getElementById('bd-back-nav').addEventListener('click', goHome);
+  document.getElementById('bd-nav-map').addEventListener('click', () => {
+    viewBundle.classList.add('hidden');
+    showMapView();
+  });
   document.getElementById('totals-back-btn').addEventListener('click', () => {
     viewTotals.classList.add('hidden');
     viewBundle.classList.remove('hidden');
@@ -142,7 +146,16 @@
   const cardMenuDropdown = document.getElementById('card-menu-dropdown');
   const cardMenuReverseCheck = document.getElementById('card-menu-reverse-check');
   document.getElementById('card-back-btn').addEventListener('click', cardGoBack);
-  document.getElementById('card-back-nav').addEventListener('click', cardGoBack);
+  document.getElementById('card-back-nav').addEventListener('click', () => {
+    viewCard.classList.add('hidden');
+    viewBundle.classList.add('hidden');
+    showMapView();
+  });
+
+  document.getElementById('card-bundles-nav').addEventListener('click', () => {
+    viewCard.classList.add('hidden');
+    viewBundle.classList.remove('hidden');
+  });
 
   // ─── Card burger menu ─────────────────────────────
   function openCardMenu() {
@@ -189,8 +202,29 @@
     setTimeout(() => { bdSearch.focus(); bdSearch.select(); }, 80);
   });
 
+  document.getElementById('card-menu-list').addEventListener('click', () => {
+    closeCardMenu();
+    viewCard.classList.add('hidden');
+    viewBundle.classList.remove('hidden');
+  });
+
+  document.getElementById('card-menu-report').addEventListener('click', () => {
+    closeCardMenu();
+    viewCard.classList.add('hidden');
+    showTotalsView(currentBundle);
+  });
+
   document.getElementById('card-menu-delete-reading').addEventListener('click', () => {
     closeCardMenu();
+    document.getElementById('del-reading-modal').classList.remove('hidden');
+  });
+
+  document.getElementById('del-reading-cancel').addEventListener('click', () => {
+    document.getElementById('del-reading-modal').classList.add('hidden');
+  });
+
+  document.getElementById('del-reading-confirm').addEventListener('click', () => {
+    document.getElementById('del-reading-modal').classList.add('hidden');
     currentRow['READING'] = '';
     const hasSkip = (currentRow['SKIP'] || '').trim() !== '' && currentRow['SKIP'] !== 'Other';
     const hasComments = (currentRow['COMMENTS'] || '').trim() !== '';
@@ -1562,7 +1596,7 @@
     if (returnTarget) cardReturnTarget = returnTarget;
     const backLabel = cardReturnTarget === 'map' ? 'Map' : 'List';
     document.getElementById('card-back-label').textContent = backLabel;
-    document.getElementById('card-back-nav-label').textContent = backLabel;
+    document.getElementById('card-back-nav-label').textContent = 'Map';
 
     const num = row['#'] || '';
     const street = row['STREET'] || '';

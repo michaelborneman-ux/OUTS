@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Meter Reader — User Guide</title>
+  <style>
+    :root {
+      --bg: #0f1724;
+      --surface: #1a2438;
+      --surface2: #212f45;
+      --border: rgba(255,255,255,0.08);
+      --gold: #f59e0b;
+      --gold-light: #fcd34d;
+      --text: #e2e8f0;
+      --sub: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #3b82f6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    /* ── Header ── */
+    .site-header {
+      background: var(--surface);
+      border-bottom: 2px solid var(--gold);
+      padding: 24px 20px 20px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+    .site-header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--gold);
+      letter-spacing: 0.04em;
+    }
+    .site-header p {
+      color: var(--sub);
+      font-size: 0.88rem;
+      margin-top: 4px;
+    }
+
+    /* ── TOC ── */
+    .toc {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin: 24px auto;
+      max-width: 700px;
+    }
+    .toc h2 {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--sub);
+      margin-bottom: 12px;
+    }
+    .toc ol {
+      padding-left: 20px;
+    }
+    .toc li {
+      margin: 6px 0;
+    }
+    .toc a {
+      color: var(--gold-light);
+      text-decoration: none;
+      font-size: 0.95rem;
+    }
+    .toc a:hover { text-decoration: underline; }
+
+    /* ── Main layout ── */
+    main {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 0 16px 60px;
+    }
+
+    /* ── Sections ── */
+    section {
+      margin-top: 40px;
+    }
+    section h2 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--gold);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    section h2 .icon {
+      width: 28px;
+      height: 28px;
+      background: rgba(245,158,11,0.15);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    section h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 20px 0 8px;
+    }
+    section p {
+      color: var(--sub);
+      margin-bottom: 10px;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin-bottom: 12px;
+    }
+    .card-title {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .card p { margin-bottom: 0; }
+
+    /* ── Steps ── */
+    .steps {
+      counter-reset: step;
+      list-style: none;
+      padding: 0;
+    }
+    .steps li {
+      counter-increment: step;
+      display: flex;
+      gap: 14px;
+      margin-bottom: 14px;
+      align-items: flex-start;
+    }
+    .steps li::before {
+      content: counter(step);
+      background: var(--gold);
+      color: #000;
+      font-weight: 700;
+      font-size: 0.8rem;
+      min-width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .steps li span {
+      color: var(--sub);
+      font-size: 0.95rem;
+    }
+    .steps li strong { color: var(--text); }
+
+    /* ── Tips ── */
+    .tip {
+      background: rgba(245,158,11,0.08);
+      border-left: 3px solid var(--gold);
+      border-radius: 0 8px 8px 0;
+      padding: 12px 16px;
+      margin: 14px 0;
+      color: var(--sub);
+      font-size: 0.93rem;
+    }
+    .tip strong { color: var(--gold-light); }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      vertical-align: middle;
+    }
+    .badge-gold  { background: rgba(245,158,11,0.2); color: var(--gold-light); }
+    .badge-green { background: rgba(34,197,94,0.15); color: #86efac; }
+    .badge-blue  { background: rgba(59,130,246,0.15); color: #93c5fd; }
+    .badge-red   { background: rgba(239,68,68,0.15); color: #fca5a5; }
+
+    /* ── Skip reason list ── */
+    .skip-list {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .skip-list li {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.88rem;
+      color: var(--sub);
+    }
+
+    /* ── CSV table ── */
+    .csv-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      margin-top: 10px;
+    }
+    .csv-table th {
+      background: var(--surface2);
+      color: var(--gold-light);
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+    }
+    .csv-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--sub);
+      vertical-align: top;
+    }
+    .csv-table tr:last-child td { border-bottom: none; }
+    code {
+      background: rgba(255,255,255,0.07);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: monospace;
+      font-size: 0.88em;
+      color: var(--gold-light);
+    }
+
+    /* ── Nav bar reference ── */
+    .nav-bar {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      justify-content: space-around;
+      padding: 12px 8px;
+      margin: 14px 0;
+    }
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.72rem;
+      color: var(--sub);
+    }
+    .nav-item.active { color: var(--gold); }
+    .nav-item svg { opacity: 0.8; }
+    .nav-item.active svg { opacity: 1; }
+
+    @media (max-width: 480px) {
+      .skip-list { grid-template-columns: 1fr; }
+      .site-header h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <h1>&#9660; Meter Reader — User Guide</h1>
+  <p>Field reference for MET OUTS v7.2</p>
+</header>
+
+<main>
+
+  <!-- TOC -->
+  <nav class="toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#unlock">Unlocking the App</a></li>
+      <li><a href="#home">Home Screen</a></li>
+      <li><a href="#csv">Loading a Route (CSV)</a></li>
+      <li><a href="#bundle">Bundle List Page</a></li>
+      <li><a href="#card">Data Entry Page</a></li>
+      <li><a href="#map">Map View</a></li>
+      <li><a href="#report">Report Page</a></li>
+      <li><a href="#skip">Skip Reasons</a></li>
+      <li><a href="#optimize">Route Optimization</a></li>
+      <li><a href="#tips">Tips &amp; Notes</a></li>
+    </ol>
+  </nav>
+
+
+  <!-- 1. Unlock -->
+  <section id="unlock">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </span>
+      1 — Unlocking the App
+    </h2>
+    <p>The app locks itself each day with a PIN to prevent accidental use. Enter the PIN on the lock screen to begin your shift.</p>
+    <div class="card" style="text-align:center;">
+      <div class="card-title" style="font-size:2rem; letter-spacing:0.3em; color:var(--gold);">4959</div>
+      <p style="margin-top:4px;">Daily unlock PIN</p>
+    </div>
+    <p>Once unlocked the app stays open for the rest of the day. You will not need to enter the PIN again unless the app is fully closed and reopened the next day.</p>
+  </section>
+
+
+  <!-- 2. Home -->
+  <section id="home">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </span>
+      2 — Home Screen
+    </h2>
+    <p>The home screen shows a summary of your day and lists all loaded bundles.</p>
+    <div class="card">
+      <div class="card-title">Summary bar</div>
+      <p>Shows total <strong>Bundles</strong>, total <strong>Cards</strong> (meter addresses), how many have been <strong>Read</strong>, and how many bundles have been <strong>Sent</strong>.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Bundle status badges</div>
+      <p>
+        <span class="badge badge-gold">In Progress</span> — some readings recorded<br>
+        <span class="badge badge-green">Complete</span> — all cards read or skipped<br>
+        <span class="badge badge-blue">Sent</span> — bundle marked as sent
+      </p>
+    </div>
+    <div class="card">
+      <div class="card-title">Reader name</div>
+      <p>Tap the name at the top to change it. The name is printed on the report.</p>
+    </div>
+  </section>
+
+
+  <!-- 3. CSV -->
+  <section id="csv">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        </svg>
+      </span>
+      3 — Loading a Route (CSV)
+    </h2>
+    <p>Routes are loaded by importing a CSV file from the home screen. Tap the <strong>upload button</strong> and select the file from your device.</p>
+
+    <h3>Required CSV columns</h3>
+    <table class="csv-table">
+      <thead>
+        <tr><th>Column header</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>Bundle</code></td><td>Groups addresses together. If blank, the City field is used instead.</td></tr>
+        <tr><td><code>#</code></td><td>Street number</td></tr>
+        <tr><td><code>STREET</code></td><td>Street name</td></tr>
+        <tr><td><code>City</code></td><td>City name</td></tr>
+        <tr><td><code>Serial No.</code></td><td>Meter serial number</td></tr>
+        <tr><td><code>MTR SIZE</code></td><td>Meter size — controls expected digit count and estimate category</td></tr>
+        <tr><td><code>READING</code></td><td>Leave blank in the import file — filled in by the reader</td></tr>
+        <tr><td><code>READ DATE</code></td><td>Leave blank — set automatically when a reading is saved</td></tr>
+        <tr><td><code>COMMENTS</code></td><td>Pre-printed special instructions, or left blank for reader notes</td></tr>
+      </tbody>
+    </table>
+
+    <div class="tip">
+      <strong>Tip:</strong> Any extra columns in the CSV are preserved and will appear in the exported file unchanged.
+    </div>
+  </section>
+
+
+  <!-- 4. Bundle List -->
+  <section id="bundle">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+          <line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/>
+          <line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+        </svg>
+      </span>
+      4 — Bundle List Page
+    </h2>
+    <p>Tapping a bundle opens its address list. From here you can:</p>
+    <ul style="padding-left:20px; color:var(--sub); margin-bottom:12px;">
+      <li style="margin-bottom:6px;">See every address in the bundle and their reading status</li>
+      <li style="margin-bottom:6px;">Search or filter addresses (missed / skipped)</li>
+      <li style="margin-bottom:6px;">Tap an address to open its data entry card</li>
+      <li style="margin-bottom:6px;">Optimize the route order</li>
+      <li style="margin-bottom:6px;">Open the bundle report</li>
+      <li style="margin-bottom:6px;">Mark the bundle as Sent</li>
+    </ul>
+
+    <h3>Estimate totals</h3>
+    <p>The header shows estimated counts split by meter size category:</p>
+    <div class="card">
+      <p>
+        <strong style="color:var(--text);">3 Est</strong> — meters with size 3<br>
+        <strong style="color:var(--text);">4–6 Est</strong> — meters with size 4, 5, or 6<br>
+        <strong style="color:var(--text);">7+ Est</strong> — meters with size 7 or larger
+      </p>
+    </div>
+
+    <h3>Bottom navigation</h3>
+    <div class="nav-bar">
+      <div class="nav-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+          <line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>
+        </svg>
+        Map
+      </div>
+      <div class="nav-item active">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        Bundles
+      </div>
+    </div>
+  </section>
+
+
+  <!-- 5. Card / Data Entry -->
+  <section id="card">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      </span>
+      5 — Data Entry Page
+    </h2>
+    <p>This is the main screen for recording a meter reading. It shows one address at a time.</p>
+
+    <h3>Reading field</h3>
+    <p>Enter the digits shown on the meter. The app highlights the field in red if the digit count does not match the expected count for that meter size. The expected digit count by meter size:</p>
+    <div class="card">
+      <p>
+        <code>UD</code> — 6 digits<br>
+        <code>UC</code>, <code>UB</code> — 5 digits<br>
+        <code>S…</code> prefix — 5 digits<br>
+        <code>C</code>, <code>D</code>, <code>G</code> prefix — 4 digits<br>
+        All others — no restriction
+      </p>
+    </div>
+
+    <h3>Saving a reading</h3>
+    <ol class="steps">
+      <li><span>Type the meter reading into the <strong>Reading</strong> field.</span></li>
+      <li><span>Optionally add a <strong>Comment</strong>.</span></li>
+      <li><span>Tap <strong>Save</strong>. The date and time are recorded automatically and the app advances to the next card.</span></li>
+    </ol>
+    <p>Once saved, the reading field is <strong>locked</strong> to prevent accidental changes. To correct a reading, open the burger menu and tap <strong>Delete Reading</strong>, then re-enter it.</p>
+
+    <h3>Skipping a meter</h3>
+    <p>If you cannot read a meter, select a reason from the <strong>Skip</strong> dropdown (see <a href="#skip" style="color:var(--gold-light);">Skip Reasons</a>) and tap Save. A skipped card counts as complete.</p>
+
+    <h3>Burger menu options</h3>
+    <div class="card">
+      <div class="card-title">Reverse Direction</div>
+      <p>Normally saving advances forward to the next card. Enable this to advance <em>backward</em> — useful when walking back down a street.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Search List</div>
+      <p>Returns to the bundle list with the search bar focused so you can jump to a specific address.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Report</div>
+      <p>Opens the bundle report page directly.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Delete Reading <span class="badge badge-red">locked cards only</span></div>
+      <p>Removes a saved reading so it can be re-entered. A confirmation warning is shown before deletion.</p>
+    </div>
+
+    <h3>Bottom navigation</h3>
+    <div class="nav-bar">
+      <div class="nav-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Prev
+      </div>
+      <div class="nav-item active">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+          <line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>
+        </svg>
+        Map
+      </div>
+      <div class="nav-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        Bundles
+      </div>
+      <div class="nav-item">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+        Next
+      </div>
+    </div>
+  </section>
+
+
+  <!-- 6. Map -->
+  <section id="map">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+          <line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/>
+        </svg>
+      </span>
+      6 — Map View
+    </h2>
+    <p>The map shows all geocoded addresses for the current bundle as colour-coded markers.</p>
+
+    <h3>Marker colours</h3>
+    <div class="card">
+      <p>
+        <span style="color:#6366f1;">&#9679;</span> <strong style="color:var(--text);">Blue/Purple</strong> — unread<br>
+        <span style="color:#22c55e;">&#9679;</span> <strong style="color:var(--text);">Green</strong> — read<br>
+        <span style="color:#f59e0b;">&#9679;</span> <strong style="color:var(--text);">Gold</strong> — skipped<br>
+        <span style="color:#3b82f6;">&#9679;</span> <strong style="color:var(--text);">Pulsing blue</strong> — your current GPS location
+      </p>
+    </div>
+
+    <h3>Tapping a marker</h3>
+    <p>Taps a marker to see the address. From the popup you can open that card directly or fix the pin location if it is in the wrong place.</p>
+
+    <h3>Fixing a location</h3>
+    <ol class="steps">
+      <li><span>Tap the marker that is in the wrong position.</span></li>
+      <li><span>Tap <strong>Fix Location</strong> in the popup.</span></li>
+      <li><span>Enter the correct <strong>latitude</strong> and <strong>longitude</strong> in decimal format (e.g. <code>41.8781</code>, <code>-87.6298</code>).</span></li>
+      <li><span>Tap <strong>Confirm</strong>. The marker moves and the corrected position is saved permanently.</span></li>
+    </ol>
+
+    <h3>Geocoding</h3>
+    <p>When a bundle is opened, the app geocodes all addresses using OpenStreetMap. Geocoded positions are cached so the map works offline after the first load. Use <strong>Geocode All</strong> on the bundle page while you have a signal before heading into the field.</p>
+
+    <div class="tip">
+      <strong>Tip:</strong> Map tiles are also cached for offline use. Zoom into your work area while online so the tiles are stored.
+    </div>
+  </section>
+
+
+  <!-- 7. Report -->
+  <section id="report">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+      </span>
+      7 — Report Page
+    </h2>
+    <p>The report page generates a printable summary for a bundle. Open it from the bundle list header button, or from the <strong>Report</strong> item in the data entry burger menu.</p>
+    <p>The report includes:</p>
+    <ul style="padding-left:20px; color:var(--sub); margin-bottom:12px;">
+      <li style="margin-bottom:6px;">Bundle name, date, and reader name</li>
+      <li style="margin-bottom:6px;">Meter counts by estimate category (3-day, 4–6 day, 7+ day)</li>
+      <li style="margin-bottom:6px;">Total estimated amount</li>
+      <li style="margin-bottom:6px;">Signature line</li>
+    </ul>
+    <p>Use the <strong>Print</strong> button to print or save as PDF.</p>
+    <div class="tip">
+      <strong>Tip:</strong> Mark a bundle as <strong>Sent</strong> after submitting it. Sent bundles are tracked on the totals screen so you have a record of what has been turned in.
+    </div>
+  </section>
+
+
+  <!-- 8. Skip Reasons -->
+  <section id="skip">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+        </svg>
+      </span>
+      8 — Skip Reasons
+    </h2>
+    <p>When a meter cannot be read, select the appropriate reason before saving. The skip reason is exported with the CSV.</p>
+    <ul class="skip-list">
+      <li>Meter Removed</li>
+      <li>Condensation</li>
+      <li>Unsafe Condition</li>
+      <li>Meter Under Porch</li>
+      <li>Meter Damaged</li>
+      <li>Special Arrangement</li>
+      <li>Dead Battery</li>
+      <li>Other (free text)</li>
+    </ul>
+    <div class="tip">
+      <strong>Other:</strong> Selecting "Other" reveals a text field — type a custom reason before saving.
+    </div>
+  </section>
+
+
+  <!-- 9. Route Optimization -->
+  <section id="optimize">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <polyline points="17 1 21 5 17 9"/>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <polyline points="7 23 3 19 7 15"/>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </span>
+      9 — Route Optimization
+    </h2>
+    <p>The app can reorder the addresses in a bundle to create an efficient route.</p>
+    <ol class="steps">
+      <li><span>Open a bundle and tap <strong>Optimize Route</strong>.</span></li>
+      <li><span>The list enters <em>pick-start mode</em>. Tap the address you want to <strong>start from</strong>.</span></li>
+      <li><span>The app calculates the shortest path from that point using road distances (online) or straight-line distances (offline).</span></li>
+      <li><span>The list reorders and sequence numbers update.</span></li>
+    </ol>
+    <div class="tip">
+      <strong>Reset:</strong> Tap <strong>Reset Order</strong> to restore the original CSV order at any time.
+    </div>
+    <div class="tip">
+      <strong>Offline use:</strong> If you have no signal, optimization still works using straight-line (as-the-crow-flies) distances. Geocode all addresses while online beforehand for the best results.
+    </div>
+  </section>
+
+
+  <!-- 10. Tips -->
+  <section id="tips">
+    <h2>
+      <span class="icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </span>
+      10 — Tips &amp; Notes
+    </h2>
+
+    <div class="card">
+      <div class="card-title">Works offline</div>
+      <p>All data is saved locally on the device. You do not need a signal to record readings. Sync and export when you are back in range.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Exporting data</div>
+      <p>Use the <strong>Export CSV</strong> button on the bundle list to download a completed route file. Column names are converted to the standard output format automatically.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Crash recovery</div>
+      <p>Readings are saved to a local backup after every entry. If the app closes unexpectedly, your data will be restored the next time you open it.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Multiple units at one address</div>
+      <p>When multiple meters share the same address, the map shows a picker so you can select the correct unit before opening its card.</p>
+    </div>
+    <div class="card" style="border-color: var(--red);">
+      <div class="card-title" style="color:#fca5a5;">&#9888; Do not clear your browser cache</div>
+      <p>All readings, bundle data, geocache, and settings are stored in the browser. Clearing your browser cache or site data <strong style="color:#fca5a5;">will permanently delete everything</strong> that has not been exported or backed up. Always export your CSV or confirm your auto-backup folder is set before clearing any browser data.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Install as an app</div>
+      <p>On iOS tap <strong>Share → Add to Home Screen</strong>. On Android tap <strong>Menu → Add to Home Screen</strong>. This gives you a full-screen experience with no browser bar.</p>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

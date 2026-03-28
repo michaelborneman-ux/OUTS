@@ -76,6 +76,17 @@
         </label>
         <input type="file" id="csv-file-input" accept=".csv" multiple hidden>
       </div>
+      <div style="text-align:center; padding: 6px 0 2px;">
+        <a href="guide.html" target="_blank" style="display:inline-flex; align-items:center; gap:7px; color:#f59e0b; font-size:0.82rem; font-weight:600; text-decoration:none; letter-spacing:0.04em; opacity:0.85;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor" stroke="none" opacity="0.3"/>
+            <line x1="12" y1="8" x2="12" y2="12" stroke-width="2.5"/>
+            <line x1="12" y1="8" x2="16" y2="16" stroke-width="1.5" opacity="0.5"/>
+          </svg>
+          User Guide
+        </a>
+      </div>
     </div>
 
     <!-- Summary stats bar -->
@@ -270,6 +281,15 @@
 
     <!-- Bottom nav -->
     <nav class="bottom-nav">
+      <div class="bd-nav-spacer"></div>
+      <div class="bottom-nav-item" id="bd-nav-map">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+          <line x1="8" y1="2" x2="8" y2="18"/>
+          <line x1="16" y1="6" x2="16" y2="22"/>
+        </svg>
+        <span>Map</span>
+      </div>
       <div class="bottom-nav-item active" id="bd-back-nav">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <rect x="3" y="3" width="7" height="7" rx="1"/>
@@ -279,6 +299,7 @@
         </svg>
         <span>Bundles</span>
       </div>
+      <div class="bd-nav-spacer"></div>
     </nav>
   </div>
 
@@ -302,24 +323,12 @@
           </svg>
           <span id="card-back-label">List</span>
         </button>
-        <div class="card-dt-record-nav">
-          <button class="card-dt-nav-btn" id="card-prev-btn" title="Previous record">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="15 18 9 12 15 6"/>
-            </svg>
-          </button>
-          <div class="card-nav-center">
+        <div class="card-nav-center">
             <span class="card-dt-nav-pos" id="card-nav-pos"></span>
             <span class="card-nav-complete" id="card-nav-complete"></span>
           </div>
-          <button class="card-dt-nav-btn" id="card-next-btn" title="Next record">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </button>
-        </div>
         <button class="card-dt-menu-btn" id="card-menu-btn" title="Options">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <line x1="3" y1="6" x2="21" y2="6"/>
             <line x1="3" y1="12" x2="21" y2="12"/>
             <line x1="3" y1="18" x2="21" y2="18"/>
@@ -339,12 +348,33 @@
             <polyline points="20 6 9 17 4 12"/>
           </svg>
         </button>
+        <button class="card-dt-menu-item" id="card-menu-list">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <line x1="8" y1="6" x2="21" y2="6"/>
+            <line x1="8" y1="12" x2="21" y2="12"/>
+            <line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/>
+            <line x1="3" y1="12" x2="3.01" y2="12"/>
+            <line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+          <span>List</span>
+        </button>
         <button class="card-dt-menu-item" id="card-menu-search">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <circle cx="11" cy="11" r="8"/>
             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <span>Search List</span>
+        </button>
+        <button class="card-dt-menu-item" id="card-menu-report">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+          <span>Report</span>
         </button>
         <button class="card-dt-menu-item hidden" id="card-menu-delete-reading">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -463,12 +493,33 @@
 
     <!-- Bottom nav -->
     <nav class="bottom-nav">
-      <div class="bottom-nav-item active" id="card-back-nav">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <button class="card-dt-nav-btn" id="card-prev-btn" title="Previous record">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <polyline points="15 18 9 12 15 6"/>
         </svg>
-        <span id="card-back-nav-label">List</span>
+      </button>
+      <div class="bottom-nav-item active" id="card-back-nav">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/>
+          <line x1="8" y1="2" x2="8" y2="18"/>
+          <line x1="16" y1="6" x2="16" y2="22"/>
+        </svg>
+        <span id="card-back-nav-label">Map</span>
       </div>
+      <div class="bottom-nav-item" id="card-bundles-nav">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+        <span>Bundles</span>
+      </div>
+      <button class="card-dt-nav-btn" id="card-next-btn" title="Next record">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
     </nav>
   </div>
 
@@ -719,6 +770,24 @@
       <div class="recover-list" id="recover-list"></div>
       <div class="modal-actions" style="margin-top:12px;">
         <button class="modal-cancel" id="recover-modal-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Reading Confirmation Modal -->
+  <div id="del-reading-modal" class="modal-overlay hidden">
+    <div class="modal-sheet">
+      <div class="modal-icon modal-icon-warn">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <h2 class="modal-title">Delete Reading?</h2>
+      <p class="modal-desc">This reading is locked. Are you sure you want to delete it?</p>
+      <div class="modal-actions">
+        <button class="modal-cancel" id="del-reading-cancel">Cancel</button>
+        <button class="modal-confirm modal-confirm-warn" id="del-reading-confirm">Delete</button>
       </div>
     </div>
   </div>

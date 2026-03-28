@@ -1384,8 +1384,8 @@ html, body {
   border: none;
   border-radius: 8px;
   color: #fff;
-  width: 34px;
-  height: 34px;
+  width: 41px;
+  height: 41px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1443,13 +1443,13 @@ html, body {
 }
 
 .card-nav-complete {
-  font-size: 0.78rem;
+  font-size: 1.01rem;
   color: var(--header-sub);
   white-space: nowrap;
 }
 
 .card-dt-nav-pos {
-  font-size: 0.94rem;
+  font-size: 1.22rem;
   font-weight: 600;
   color: var(--header-sub);
   min-width: 44px;
@@ -1873,6 +1873,26 @@ html, body {
 #view-home .bottom-nav,
 #view-map  .bottom-nav {
   justify-content: space-around;
+}
+
+/* Card view bottom nav — prev/next at corners, List centered */
+#view-card .bottom-nav,
+#view-bundle .bottom-nav {
+  justify-content: space-between;
+}
+
+.bd-nav-spacer {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+#view-card #card-prev-btn,
+#view-card #card-next-btn {
+  width: 48px;
+  height: 48px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 10px;
 }
 
 /* Map container: fills all remaining flex space */
