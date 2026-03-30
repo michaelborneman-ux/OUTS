@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v7.5';
+  const APP_VERSION = 'v7.6';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -383,13 +383,20 @@
       const coordStr = coords.map(c => `${c.lng},${c.lat}`).join(';');
       const resp = await fetch(
         `https://router.project-osrm.org/table/v1/driving/${coordStr}?annotations=duration`,
-        { headers: { 'User-Agent': 'MeterReaderPWA/1.0' }, signal: AbortSignal.timeout(10000) }
+        { signal: AbortSignal.timeout(15000) }
       );
-      if (!resp.ok) return null;
+      if (!resp.ok) {
+        console.warn(`OSRM table API returned ${resp.status} ${resp.statusText}`);
+        return null;
+      }
       const data = await resp.json();
-      if (data.code !== 'Ok' || !data.durations) return null;
+      if (data.code !== 'Ok' || !data.durations) {
+        console.warn('OSRM table API bad response:', data.code, data.message);
+        return null;
+      }
       return data.durations;  // matrix[i][j] = seconds from i to j
-    } catch {
+    } catch (err) {
+      console.warn('OSRM table API error:', err.message || err);
       return null;
     }
   }
@@ -491,7 +498,7 @@
 
     document.getElementById('bd-reset-order-btn').classList.remove('hidden');
     showBundleDetail(bundle, true);
-    showToast(usedRoads ? 'Route optimized using road distances.' : 'Offline — route optimized using straight-line distances.');
+    showToast(usedRoads ? 'Route optimized using road distances.' : (navigator.onLine ? 'Road routing unavailable — used straight-line distances. Check console for details.' : 'Offline — route optimized using straight-line distances.'));
   }
 
   function resetRouteOrder() {
@@ -2852,6 +2859,8 @@
     updateBackupBarUI();
   }
 
+  let restored = false;
+
   function boot() {
     bundleRates = loadBundleRates();
     loadSentState();
@@ -2861,7 +2870,7 @@
       if (saved) setReaderName(saved);
     } catch (_) { }
     // Restore any previously saved records
-    const restored = loadRecordsBackup();
+    restored = loadRecordsBackup();
 
     // Run splash animation, then transition to home
     runSplashAnimation(() => {
