@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v7.4';
+  const APP_VERSION = 'v7.5';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -2882,6 +2882,16 @@
     // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(() => { });
+
+      // Show update banner when a new service worker takes control
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        const banner = document.getElementById('update-banner');
+        const btn = document.getElementById('update-banner-btn');
+        if (banner) {
+          banner.classList.remove('hidden');
+          btn.addEventListener('click', () => window.location.reload());
+        }
+      });
     }
   }
 
