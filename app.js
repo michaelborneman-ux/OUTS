@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v7.6';
+  const APP_VERSION = 'v7.8';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -1733,6 +1733,11 @@
     }, 600);
   });
 
+  // Allow pressing Enter on the reading input to trigger save
+  cardDtReading.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') cardDtSaveBtn.click();
+  });
+
   // ─── Reader Name Modal Handlers ───────────────────
   function setReaderName(name) {
     readerName = name;
@@ -2418,6 +2423,7 @@
         : (row['READING'] || '');
       lines.push(headers.map(h => {
         if (h === 'READING') return csvCell(readingVal);
+        if (h === 'READ DATE') return csvCell((row[h] || '').replace(/-/g, '/'));
         return csvCell(row[h] || '');
       }).join(','));
     }
