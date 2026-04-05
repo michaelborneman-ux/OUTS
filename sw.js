@@ -3,7 +3,7 @@
    Enables offline use after first load
    ================================================ */
 
-const CACHE_NAME = 'meter-reader-v7.8';
+const CACHE_NAME = 'meter-reader-v7.9';
 const TILE_CACHE = 'map-tiles-v1';  // kept across app updates
 
 const CACHE_FILES = [

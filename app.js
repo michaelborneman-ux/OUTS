@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v7.8';
+  const APP_VERSION = 'v7.9';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -1432,7 +1432,7 @@
             <div>
               <div class="bundle-mru">${bundle.mruIds.length} Route${bundle.mruIds.length !== 1 ? 's' : ''}</div>
               <div class="bundle-name">${esc(bundle.bundleName)}</div>
-              <div class="bundle-area">Area ${esc(bundle.mruArea)}</div>
+              <div class="bundle-area">Area ${esc(bundle.mruArea)} &nbsp;·&nbsp; Cycle ${esc(bundle.mruCycle)}</div>
             </div>
             <span class="status-badge ${status}">
               <span class="status-dot"></span>
