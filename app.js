@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v7.9';
+  const APP_VERSION = 'v8.0';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -47,6 +47,7 @@
   const GPS_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
   let bdShowMissed = false;  // bundle list filter: unread cards
   let bdShowSkipped = false;  // bundle list filter: skipped cards
+  let bdRouteFilter = '';    // bundle list filter: selected route num (last 2 digits of MRU id)
   let backupBarShown = false;  // session flag — show daily backup bar only once
   let autoSaveTimer = null;   // debounce handle for silent CSV auto-save
 
@@ -1809,7 +1810,8 @@
       const matchesFilter = !filterActive ||
         (bdShowMissed && el.dataset.status === 'unread') ||
         (bdShowSkipped && el.dataset.status === 'skip');
-      el.hidden = !(matchesSearch && matchesFilter);
+      const matchesRoute = !bdRouteFilter || (el.dataset.route || '') === bdRouteFilter;
+      el.hidden = !(matchesSearch && matchesFilter && matchesRoute);
       if (!el.hidden) visible++;
     });
     let noRes = addressList.querySelector('.bd-no-results');
@@ -1842,6 +1844,11 @@
   bdFilterSkippedBtn.addEventListener('click', () => {
     bdShowSkipped = !bdShowSkipped;
     bdFilterSkippedBtn.classList.toggle('active', bdShowSkipped);
+    applyBdFilters();
+  });
+
+  document.getElementById('bd-route-filter').addEventListener('change', (e) => {
+    bdRouteFilter = e.target.value;
     applyBdFilters();
   });
 
@@ -2005,11 +2012,26 @@
     const preserveSearch = forcePreserveSearch || !isNewBundle;
     const savedSearch = preserveSearch ? bdSearch.value : '';
     bdSearch.value = '';
+    const bdRouteSelect = document.getElementById('bd-route-filter');
     if (!preserveSearch) {
       bdShowMissed = false;
       bdShowSkipped = false;
       bdFilterMissedBtn.classList.remove('active');
       bdFilterSkippedBtn.classList.remove('active');
+      bdRouteFilter = '';
+    }
+    // Populate route dropdown (only show when bundle has multiple routes)
+    if (bundle.mruIds.length > 1) {
+      bdRouteSelect.innerHTML = '<option value="">All Routes</option>' +
+        bundle.routeNums.map((rn, i) =>
+          `<option value="${esc(rn)}"${rn === bdRouteFilter ? ' selected' : ''}>Route ${esc(rn)}</option>`
+        ).join('');
+      bdRouteSelect.value = bdRouteFilter;
+      bdRouteSelect.classList.remove('hidden');
+    } else {
+      bdRouteSelect.innerHTML = '';
+      bdRouteSelect.classList.add('hidden');
+      bdRouteFilter = '';
     }
     addressList.innerHTML = '';
     const frag = document.createDocumentFragment();
@@ -2047,6 +2069,7 @@
       card.dataset.serial = serial.toLowerCase();
       card.dataset.mtrsize = mtrSize.toLowerCase();
       card.dataset.status = skip ? 'skip' : reading ? 'read' : 'unread';
+      card.dataset.route = (row['MRU id'] || '').trim().padStart(6, '0').substring(4, 6);
       card.innerHTML = `
         <div class="addr-seq">${esc(seq)}</div>
         <div class="addr-info">

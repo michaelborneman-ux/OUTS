@@ -1187,6 +1187,20 @@ html, body {
   border-color: var(--accent);
 }
 
+.bd-route-select {
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1.5px solid var(--divider);
+  background: var(--white);
+  color: var(--text-medium);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 110px;
+}
+.bd-route-select.hidden { display: none; }
+
 .bd-no-results {
   text-align: center;
   padding: 32px 16px;
