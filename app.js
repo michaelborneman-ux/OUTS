@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const APP_VERSION = 'v8.0';
+  const APP_VERSION = 'v8.1';
 
   // ─── State ────────────────────────────────────────
   let allRecords = [];         // all CSV rows
@@ -14,6 +14,7 @@
   let sentBundles = new Set(); // bundle keys marked as sent (persisted)
   let bundleRates = {};        // bundle key → { est3, est46, est7p } — persisted
   let pendingRecordsForRates = null; // CSV records waiting for rate entry
+  let pendingBundleGroups = [];     // queue of { key, records } for sequential rate modals
   let pendingEmailBundle = null; // bundle queued in email provider picker
   let readerName = '';         // current reader name
   let pendingBundle = null;    // bundle waiting for reader name
@@ -264,8 +265,14 @@
   const rateEst3In = document.getElementById('rate-est3');
   const rateEst46In = document.getElementById('rate-est46');
   const rateEst7pIn = document.getElementById('rate-est7p');
-  function showRateModal(records) {
+  function showRateModal(records, bundleKey) {
     pendingRecordsForRates = records;
+    const desc = rateModal.querySelector('.modal-desc');
+    if (desc) {
+      desc.textContent = bundleKey
+        ? `Enter per-card rates for "${bundleKey}".`
+        : 'Enter the per-card rates for the daily report.';
+    }
     // Detect area from first record to pre-fill defaults
     const firstMruRow = records.find(r => (r['MRU id'] || '').trim());
     const mruArea = firstMruRow
@@ -291,11 +298,17 @@
     rateModal.classList.add('hidden');
     commitLoad(pendingRecordsForRates, rates);
     pendingRecordsForRates = null;
+    pendingBundleGroups.shift();
+    if (pendingBundleGroups.length) {
+      const next = pendingBundleGroups[0];
+      showRateModal(next.records, next.key);
+    }
   });
 
   document.getElementById('rate-modal-cancel').addEventListener('click', () => {
     rateModal.classList.add('hidden');
     pendingRecordsForRates = null;
+    pendingBundleGroups = [];
   });
 
   // Map tab navigation
@@ -2023,8 +2036,8 @@
     // Populate route dropdown (only show when bundle has multiple routes)
     if (bundle.mruIds.length > 1) {
       bdRouteSelect.innerHTML = '<option value="">All Routes</option>' +
-        bundle.routeNums.map((rn, i) =>
-          `<option value="${esc(rn)}"${rn === bdRouteFilter ? ' selected' : ''}>Route ${esc(rn)}</option>`
+        bundle.mruIds.map(id =>
+          `<option value="${esc(id)}"${id === bdRouteFilter ? ' selected' : ''}>${esc(id)}</option>`
         ).join('');
       bdRouteSelect.value = bdRouteFilter;
       bdRouteSelect.classList.remove('hidden');
@@ -2069,7 +2082,7 @@
       card.dataset.serial = serial.toLowerCase();
       card.dataset.mtrsize = mtrSize.toLowerCase();
       card.dataset.status = skip ? 'skip' : reading ? 'read' : 'unread';
-      card.dataset.route = (row['MRU id'] || '').trim().padStart(6, '0').substring(4, 6);
+      card.dataset.route = (row['MRU id'] || '').trim().padStart(6, '0');
       card.innerHTML = `
         <div class="addr-seq">${esc(seq)}</div>
         <div class="addr-info">
@@ -2320,6 +2333,18 @@
     ))];
   }
 
+  function groupRecordsByBundleKey(records) {
+    const hasBundle = records.some(r => (r['Bundle'] || '').trim() !== '');
+    return getNewBundleKeys(records).map(key => ({
+      key,
+      records: records.filter(r =>
+        (hasBundle
+          ? ((r['Bundle'] || '').trim() || (r['City'] || '').trim() || 'Unknown')
+          : ((r['City'] || '').trim() || 'Unknown')) === key
+      ),
+    }));
+  }
+
   csvFileInput.addEventListener('change', (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -2358,14 +2383,18 @@
         } else {
           const first = incoming[0];
           if (first.hasOwnProperty('RATE_3EST') && first.hasOwnProperty('RATE_46EST') && first.hasOwnProperty('RATE_7PEST')) {
-            const rates = {
-              est3: parseFloat(first['RATE_3EST']) || 0,
-              est46: parseFloat(first['RATE_46EST']) || 0,
-              est7p: parseFloat(first['RATE_7PEST']) || 0,
-            };
-            commitLoad(incoming, rates);
+            groupRecordsByBundleKey(incoming).forEach(({ records }) => {
+              const r = records[0];
+              commitLoad(records, {
+                est3: parseFloat(r['RATE_3EST']) || 0,
+                est46: parseFloat(r['RATE_46EST']) || 0,
+                est7p: parseFloat(r['RATE_7PEST']) || 0,
+              });
+            });
           } else {
-            showRateModal(incoming);
+            pendingBundleGroups = groupRecordsByBundleKey(incoming);
+            const first2 = pendingBundleGroups[0];
+            showRateModal(first2.records, first2.key);
           }
         }
 
